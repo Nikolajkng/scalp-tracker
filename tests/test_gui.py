@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+import tkinter.font as tkfont
 from pathlib import Path
 
 
@@ -55,7 +56,29 @@ class GuiTests(unittest.TestCase):
                     tree.xview_moveto(0)
                 app.geometry('980x720')
                 app.update()
-                self.assertLessEqual(app.product_tree.column('name', 'width'), 480)
+                body_font = tkfont.Font(family='sans-serif', size=11)
+                self.assertGreaterEqual(app.product_tree.column('name', 'width'),
+                                        body_font.measure(app.product_tree.set(str(pid), 'name')) + 28)
+                self.assertLess(app.product_tree.xview()[1], 1)
+                self.assertEqual(app.compare_tree.set('0', 'bottles'), '1')
+                # Short contents should fill the viewport, including after resize.
+                store.save_product('Short', 'Test', 'Water, Glycerin',
+                                   ['water', 'glycerin'], product_id=pid)
+                app.refresh()
+                for geometry in ('1180x840', '980x720'):
+                    app.geometry(geometry)
+                    app.update()
+                    for tree in app.tables:
+                        width = sum(tree.column(c, 'width') for c in tree['columns'])
+                        self.assertGreaterEqual(width, tree.winfo_width() - 2)
+                    self.assertAlmostEqual(
+                        sum(app.product_tree.column(c, 'width') for c in app.product_tree['columns']),
+                        app.product_tree.winfo_width() - 2, delta=2)
+                    self.assertEqual(app.product_tree.column('name', 'width'),
+                                     max(60, body_font.measure('Product / formula') + 28,
+                                         body_font.measure('Short') + 28,
+                                         tkfont.Font(family='sans-serif', size=10, weight='bold')
+                                         .measure('Product / formula') + 28))
                 self.assertTrue(app.footer.winfo_ismapped())
                 self.assertLessEqual(app.footer.winfo_y() + app.footer.winfo_height(), app.winfo_height())
                 app.symptom.set('Flakes')

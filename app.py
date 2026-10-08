@@ -127,7 +127,7 @@ class App(ctk.CTk):
         tree = ttk.Treeview(frame, columns=columns, show='headings', selectmode='browse', height=7)
         numeric_columns = {
             'n', 'flakes', 'itch', 'bumps', 'reaction', 'tolerated',
-            'mixed', 'unknown', 'difference',
+            'mixed', 'unknown', 'difference', 'bottles',
         }
         for column, label, width in zip(columns, labels, widths):
             anchor = 'center' if column in numeric_columns else 'w'
@@ -156,7 +156,7 @@ class App(ctk.CTk):
             horizontal.set(first, last)
             self.position_separators(tree, columns, lines)
         tree.configure(xscrollcommand=on_horizontal_scroll)
-        tree.bind('<Configure>', lambda event: self.position_separators(tree, columns, lines))
+        tree.bind('<Configure>', lambda event: self.resize_table_columns(tree))
         tree.bind('<ButtonRelease-1>', lambda event: self.position_separators(tree, columns, lines), add='+')
         self.tables.append(tree)
         return tree
@@ -182,8 +182,14 @@ class App(ctk.CTk):
                 widest = heading_font.measure(label)
                 for item in tree.get_children():
                     widest = max(widest, body_font.measure(str(tree.set(item, column))))
-                widths.append(min(480, max(60, widest + 28)))
-                tree.column(column, width=widths[-1])
+                widths.append(max(60, widest + 28))
+            # Preserve room for every value, scrolling when content is wider
+            # than the viewport. The final column fills remaining row space.
+            available = max(0, tree.winfo_width() - 2)
+            extra = max(0, available - sum(widths))
+            for index, (column, width) in enumerate(zip(columns, widths)):
+                tree.column(column, minwidth=width,
+                            width=width + (extra if index == len(columns) - 1 else 0))
             self.position_separators(tree, columns, lines)
             break
 
@@ -357,13 +363,14 @@ class App(ctk.CTk):
         self.summary = tk.StringVar()
         ctk.CTkLabel(self.compare_tab, textvariable=self.summary, wraplength=900).pack(anchor='w', pady=10)
         self.compare_tree = self.table(self.compare_tab,
-            ('ingredient', 'reaction', 'tolerated', 'mixed', 'unknown', 'difference'),
-            ('Ingredient', 'Reaction', 'Tolerated', 'Mixed', 'Unassessed / other', 'Difference (pp)'),
-            (270, 95, 95, 70, 150, 120))
+            ('ingredient', 'bottles', 'reaction', 'tolerated', 'mixed', 'unknown', 'difference'),
+            ('Ingredient', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Mixed', 'Unassessed / other', 'Difference (pp)'),
+            (270, 140, 95, 95, 70, 150, 120))
         self.compare_tree.bind('<<TreeviewSelect>>', self.ingredient_detail)
         self.detail = tk.StringVar(value='Select an ingredient to see which products contain it.')
         ctk.CTkLabel(self.compare_tab, textvariable=self.detail, wraplength=900).pack(anchor='w', pady=10)
         ctk.CTkLabel(self.compare_tab, text='Difference = % of reaction products containing the ingredient minus % of tolerated products containing it. '
+                  'Bottles / formulas counts all saved product records containing the ingredient, including unassessed products. '
                   'Mixed products are excluded from both percentages. Counts are distinct products, not washes. '
                   'These are descriptive patterns with limited evidence, not probabilities or proof of a trigger. '
                   'Ingredients used together, concentration, storage and other changes can explain patterns.',
@@ -382,7 +389,7 @@ class App(ctk.CTk):
                 points = 100 * row['difference']
                 marker = ' 🚩' if points >= 20 else ' ✅' if points <= -20 else ''
                 difference = f"{points:+.1f}{marker}"
-            self.compare_tree.insert('', 'end', iid=key, values=(row['name'],
+            self.compare_tree.insert('', 'end', iid=key, values=(row['name'], row['bottles'],
                 f"{row['reaction']} / {totals['reaction']}", f"{row['tolerated']} / {totals['tolerated']}",
                 row['mixed'], row['unknown'], difference))
         suffix = ('Add explicitly tolerated and reaction observations to compare.'

@@ -164,7 +164,7 @@ class Store:
         for name, c in counts.items():
             difference = (c['reaction']/totals['reaction'] - c['tolerated']/totals['tolerated']
                           if totals['reaction'] and totals['tolerated'] else None)
-            rows.append({'name': name, **c, 'difference': difference})
+            rows.append({'name': name, **c, 'bottles': sum(c.values()), 'difference': difference})
         rows.sort(key=lambda r: (-(r['difference'] if r['difference'] is not None else -2),
                                  -r['reaction'], r['name']))
         return totals, rows

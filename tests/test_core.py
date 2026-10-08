@@ -42,8 +42,12 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(totals, dict(reaction=1, tolerated=1, mixed=1, unknown=1))
         self.assertEqual(rows[0]['reaction'], 1)
         self.assertEqual(rows[0]['difference'], 0)
+        self.assertEqual(rows[0]['bottles'], 4)
+        # Repeated diary entries and symptom filters must not inflate bottle counts.
+        self.assertTrue(all(row['bottles'] == 4 for row in self.store.comparisons('Bumps')[1]))
         self.store.delete('product', b)
         self.assertTrue(all(r['difference'] is None for r in self.store.comparisons()[1]))
+        self.assertTrue(all(r['bottles'] == 3 for r in self.store.comparisons()[1]))
 
     def test_symptom_filter_and_unknown_not_assumed_tolerated(self):
         a, b = self.product('A'), self.product('B')
