@@ -1,0 +1,193 @@
+"""Persistence and descriptive comparisons. Only Python's standard library."""
+import csv
+import re
+import sqlite3
+import unicodedata
+from datetime import date
+from pathlib import Path
+
+ALIASES = {
+    'aqua': 'water', 'eau': 'water', 'aqua (water)': 'water',
+    'water (aqua)': 'water', 'water (aqua/eau)': 'water',
+    'parfum': 'fragrance', 'perfume': 'fragrance',
+    'parfum (fragrance)': 'fragrance', 'fragrance (parfum)': 'fragrance',
+}
+OUTCOMES = ('Unknown / not assessed', 'Tolerated', 'Reaction')
+CONTAINERS = ('Unknown', 'Original bottle', 'Decanted bottle')
+
+
+def parse_ingredients(raw):
+    """Split only outside parentheses; keep original text in the product record.
+
+    Never fuzzy-match chemistry names or split hyphens/slashes. The editable
+    preview lets the user correct ambiguous commas such as 1,2-hexanediol.
+    """
+    raw = unicodedata.normalize('NFKC', raw).strip()
+    raw = re.sub(r'^(ingredients|inci|전성분)\s*[:：]\s*', '', raw, flags=re.I)
+    tokens, current, depth = [], [], 0
+    for i, char in enumerate(raw):
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth = max(0, depth - 1)
+        numeric_comma = (char == ',' and i > 0 and i + 1 < len(raw)
+                         and raw[i-1].isdigit() and raw[i+1].isdigit())
+        if char in ',;\n\r' and depth == 0 and not numeric_comma:
+            tokens.append(''.join(current))
+            current = []
+        else:
+            current.append(char)
+    tokens.append(''.join(current))
+    return normalize_lines(tokens)
+
+
+def normalize_lines(lines):
+    result = set()
+    for line in lines:
+        name = ' '.join(unicodedata.normalize('NFKC', line).casefold().split())
+        if name:
+            result.add(ALIASES.get(name, name))
+    return sorted(result)
+
+
+class Store:
+    def __init__(self, path):
+        self.path = Path(path).expanduser().resolve()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(self.path)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute('PRAGMA foreign_keys = ON')
+        self.db.executescript('''
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+                brand TEXT NOT NULL, raw TEXT NOT NULL,
+                notes TEXT NOT NULL, location TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ingredients (
+                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                name TEXT NOT NULL, PRIMARY KEY(product_id, name)
+            );
+            CREATE TABLE IF NOT EXISTS diary (
+                id INTEGER PRIMARY KEY,
+                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                used_on TEXT NOT NULL, observed_on TEXT NOT NULL,
+                outcome TEXT NOT NULL, flakes INTEGER NOT NULL CHECK(flakes BETWEEN 0 AND 5),
+                itch INTEGER NOT NULL CHECK(itch BETWEEN 0 AND 5),
+                bumps INTEGER NOT NULL CHECK(bumps >= 0),
+                container TEXT NOT NULL, notes TEXT NOT NULL
+            );
+        ''')
+
+    def products(self):
+        return self.db.execute('SELECT * FROM products ORDER BY name, id').fetchall()
+
+    def ingredients(self, product_id):
+        return [r[0] for r in self.db.execute(
+            'SELECT name FROM ingredients WHERE product_id=? ORDER BY name', (product_id,))]
+
+    def save_product(self, name, brand, raw, ingredients, notes='', location='', product_id=None):
+        names = normalize_lines(ingredients)
+        if not name.strip() or not raw.strip() or not names:
+            raise ValueError('Provide a product name, original ingredients and reviewed ingredient names.')
+        values = (name.strip(), brand.strip(), raw.strip(), notes.strip(), location.strip())
+        with self.db:
+            if product_id is None:
+                product_id = self.db.execute(
+                    'INSERT INTO products(name,brand,raw,notes,location) VALUES(?,?,?,?,?)', values).lastrowid
+            else:
+                self.db.execute('UPDATE products SET name=?,brand=?,raw=?,notes=?,location=? WHERE id=?',
+                                values + (product_id,))
+                self.db.execute('DELETE FROM ingredients WHERE product_id=?', (product_id,))
+            self.db.executemany('INSERT INTO ingredients VALUES(?,?)', [(product_id, n) for n in names])
+        return product_id
+
+    def save_entry(self, product_id, used_on, observed_on, outcome, flakes, itch, bumps,
+                   container, notes='', entry_id=None):
+        used, observed = date.fromisoformat(used_on), date.fromisoformat(observed_on)
+        if observed < used:
+            raise ValueError('Observation date must be on or after the use date.')
+        if outcome not in OUTCOMES or container not in CONTAINERS:
+            raise ValueError('Choose a listed outcome and container.')
+        flakes, itch, bumps = int(flakes), int(itch), int(bumps)
+        if not (0 <= flakes <= 5 and 0 <= itch <= 5 and bumps >= 0):
+            raise ValueError('Flakes and itch must be 0–5; bumps must be zero or greater.')
+        values = (product_id, used.isoformat(), observed.isoformat(), outcome,
+                  flakes, itch, bumps, container, notes.strip())
+        with self.db:
+            if entry_id is None:
+                return self.db.execute('''INSERT INTO diary
+                    (product_id,used_on,observed_on,outcome,flakes,itch,bumps,container,notes)
+                    VALUES(?,?,?,?,?,?,?,?,?)''', values).lastrowid
+            self.db.execute('''UPDATE diary SET product_id=?,used_on=?,observed_on=?,outcome=?,
+                flakes=?,itch=?,bumps=?,container=?,notes=? WHERE id=?''', values + (entry_id,))
+        return entry_id
+
+    def entries(self):
+        return self.db.execute('''SELECT d.*, p.name AS product FROM diary d
+            JOIN products p ON p.id=d.product_id ORDER BY observed_on DESC, d.id DESC''').fetchall()
+
+    def delete(self, kind, record_id):
+        table = {'product': 'products', 'entry': 'diary'}[kind]
+        with self.db:
+            self.db.execute(f'DELETE FROM {table} WHERE id=?', (record_id,))
+
+    def comparisons(self, symptom='Any reaction'):
+        """Each formula counts once. Mixed outcomes stay in their own column.
+
+        Symptom comparisons only count user-labeled Reaction entries with the
+        selected symptom. Tolerated is always explicit, never inferred from 0.
+        """
+        groups = {}
+        symptom_column = {'Flakes': 'flakes', 'Itch': 'itch', 'Bumps': 'bumps'}.get(symptom)
+        for p in self.products():
+            entries = self.db.execute('SELECT * FROM diary WHERE product_id=?', (p['id'],)).fetchall()
+            reaction = any(e['outcome'] == 'Reaction' and
+                           (symptom_column is None or e[symptom_column] > 0) for e in entries)
+            tolerated = any(e['outcome'] == 'Tolerated' for e in entries)
+            # Other reactions prevent being classified as exclusively tolerated.
+            other_reaction = any(e['outcome'] == 'Reaction' for e in entries)
+            if tolerated and other_reaction:
+                group = 'mixed'
+            elif reaction:
+                group = 'reaction'
+            elif tolerated:
+                group = 'tolerated'
+            else:
+                group = 'unknown'
+            groups[p['id']] = group
+        totals = {g: list(groups.values()).count(g) for g in ('reaction', 'tolerated', 'mixed', 'unknown')}
+        counts = {}
+        for r in self.db.execute('SELECT * FROM ingredients'):
+            item = counts.setdefault(r['name'], dict.fromkeys(totals, 0))
+            item[groups[r['product_id']]] += 1
+        rows = []
+        for name, c in counts.items():
+            difference = (c['reaction']/totals['reaction'] - c['tolerated']/totals['tolerated']
+                          if totals['reaction'] and totals['tolerated'] else None)
+            rows.append({'name': name, **c, 'difference': difference})
+        rows.sort(key=lambda r: (-(r['difference'] if r['difference'] is not None else -2),
+                                 -r['reaction'], r['name']))
+        return totals, rows
+
+    def backup(self, destination):
+        destination = Path(destination).expanduser().resolve()
+        if destination == self.path:
+            raise ValueError('Choose a different file from your active database.')
+        with sqlite3.connect(destination) as target:
+            self.db.backup(target)
+
+    def export(self, directory):
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        for table in ('products', 'ingredients', 'diary'):
+            cursor = self.db.execute(f'SELECT * FROM {table}')
+            with (directory / f'{table}.csv').open('w', encoding='utf-8-sig', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([c[0] for c in cursor.description])
+                # Prevent spreadsheet formula execution in user-entered text.
+                for row in cursor:
+                    writer.writerow(["'" + v if isinstance(v, str) and v.lstrip().startswith(
+                        ('=', '+', '-', '@')) else v for v in row])
+
+    def close(self):
+        self.db.close()
