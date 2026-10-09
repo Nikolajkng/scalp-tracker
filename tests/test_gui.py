@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 import tkinter.font as tkfont
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +16,91 @@ from unittest.mock import patch
 @unittest.skipUnless(os.environ.get('DISPLAY') or sys.platform in ('win32', 'darwin'),
                      'A graphical desktop is required for the GUI smoke test')
 class GuiTests(unittest.TestCase):
+    def test_link_import_runs_in_background_and_saves_only_after_review(self):
+        import customtkinter as ctk
+        from app import App
+        from core import Store
+        from product_import import ImportedProduct, ImportError
+        with tempfile.TemporaryDirectory() as directory:
+            app = App(Store(Path(directory) / 'import.sqlite3'))
+            release = threading.Event()
+            started = threading.Event()
+
+            def widgets(widget):
+                yield widget
+                for child in widget.winfo_children():
+                    yield from widgets(child)
+
+            def fetch(_):
+                started.set()
+                release.wait(3)
+                return ImportedProduct('Imported shampoo', 'Imported brand', 'Aqua, Menthol',
+                                       'https://shop.example/shampoo', ('Review the formula.',))
+
+            try:
+                app.update()
+                window = app.import_dialog()
+                url = next(w for w in widgets(window) if isinstance(w, ctk.CTkEntry))
+                url.insert(0, 'https://shop.example/shampoo')
+                button = next(w for w in widgets(window) if isinstance(w, ctk.CTkButton)
+                              and w.cget('text') == 'Read product page')
+                with patch('app.fetch_product', side_effect=fetch) as read:
+                    button.invoke()
+                    self.assertTrue(started.wait(1))
+                    app.update()
+                    self.assertTrue(window.winfo_exists())
+                    self.assertEqual(app.store.products(), [])
+                    self.assertEqual(button.cget('state'), 'disabled')
+                    release.set()
+                    deadline = time.monotonic() + 3
+                    while window.winfo_exists() and time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(0.01)
+                    self.assertFalse(window.winfo_exists())
+                    read.assert_called_once_with('https://shop.example/shampoo')
+                review = next(w for w in app.winfo_children() if isinstance(w, ctk.CTkToplevel))
+                self.assertEqual(review.title(), 'Review imported product')
+                self.assertEqual(app.store.products(), [])
+                fields = {int(w.grid_info()['row']): w for w in widgets(review)
+                          if isinstance(w, ctk.CTkEntry)}
+                self.assertEqual(fields[0].get(), 'Imported shampoo')
+                self.assertEqual(fields[1].get(), 'Imported brand')
+                self.assertEqual(fields[3].get(), 'https://shop.example/shampoo')
+                fields[0].delete(0, 'end')
+                fields[0].insert(0, 'Corrected name')
+                next(w for w in widgets(review) if isinstance(w, ctk.CTkButton)
+                     and w.cget('text') == 'Save product').invoke()
+                app.update()
+                product = app.store.products()[0]
+                self.assertEqual(product['name'], 'Corrected name')
+                self.assertEqual(product['source_url'], 'https://shop.example/shampoo')
+                self.assertEqual(app.store.ingredients(product['id']), ['menthol', 'water'])
+                self.assertEqual(app.product_tree.set(str(product['id']), 'negative'), '1 / 2')
+                self.assertEqual(app.product_tree.set(str(product['id']), 'recommendation'), '25.0')
+                self.assertFalse(review.winfo_exists())
+                failed = app.import_dialog()
+                failed_url = next(w for w in widgets(failed) if isinstance(w, ctk.CTkEntry))
+                failed_url.insert(0, 'https://shop.example/blocked')
+                failed_button = next(w for w in widgets(failed) if isinstance(w, ctk.CTkButton)
+                                     and w.cget('text') == 'Read product page')
+                with patch('app.fetch_product', side_effect=ImportError('Page blocked')):
+                    failed_button.invoke()
+                    deadline = time.monotonic() + 3
+                    while failed_button.cget('state') == 'disabled' and time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(0.01)
+                    self.assertEqual(failed_button.cget('state'), 'normal')
+                    status = next(w.cget('textvariable') for w in widgets(failed)
+                                  if isinstance(w, ctk.CTkLabel) and w.cget('textvariable'))
+                    self.assertEqual(app.getvar(str(status)), 'Page blocked')
+                    self.assertEqual(len(app.store.products()), 1)
+                    failed.destroy()
+            finally:
+                release.set()
+                for callback in app.tk.call('after', 'info'):
+                    app.after_cancel(callback)
+                app.quit_app()
+
     def test_flag_cells_show_matching_product_records_in_both_tables(self):
         import customtkinter as ctk
         from app import App
@@ -117,6 +204,10 @@ class GuiTests(unittest.TestCase):
                     app.comparison_info_button.invoke()
                     info.assert_called_once()
                     self.assertIn('percentage points', info.call_args.args[1])
+                    info.reset_mock()
+                    app.recommendation_info_button.invoke()
+                    info.assert_called_once()
+                    self.assertIn('not a percentage of safety', info.call_args.args[1])
                 for mode in ('Light', 'Dark'):
                     app.change_theme(mode)
                     for name in app.pages:
@@ -154,6 +245,7 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual(app.compare_tree.set('0', 'bottles'), '1')
                 self.assertEqual(app.product_tree.set(str(pid), 'negative'), '0 / 2')
                 self.assertEqual(app.product_tree.set(str(pid), 'positive'), '1 / 2')
+                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '75.0')
                 flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
                          for row in app.compare_tree.get_children()}
                 self.assertEqual(flags, {'water': '—', 'glycerin': 'Positive'})
@@ -170,6 +262,7 @@ class GuiTests(unittest.TestCase):
                 app.refresh()
                 self.assertEqual(app.product_tree.set(str(pid), 'negative'), '1 / 3')
                 self.assertEqual(app.product_tree.set(str(pid), 'positive'), '1 / 3')
+                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '50.0')
                 flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
                          for row in app.compare_tree.get_children()}
                 self.assertEqual(flags['menthol'], 'Negative')

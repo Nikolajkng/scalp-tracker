@@ -1,6 +1,8 @@
 """Run with: python app.py. Offline CustomTkinter desktop interface."""
 import argparse
 import re
+import queue
+import threading
 import sqlite3
 import tkinter as tk
 import tkinter.font as tkfont
@@ -13,7 +15,9 @@ from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 
 from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
-                  ingredient_categories, CATEGORY_DESCRIPTIONS, OUTCOMES, CONTAINERS)
+                  ingredient_categories, ingredient_recommendation_score,
+                  CATEGORY_DESCRIPTIONS, OUTCOMES, CONTAINERS)
+from product_import import fetch_product, validate_url, ImportError as ProductImportError
 
 
 def text_value(widget):
@@ -131,7 +135,7 @@ class App(ctk.CTk):
         tree = ttk.Treeview(frame, columns=columns, show='headings', selectmode='browse', height=7)
         numeric_columns = {
             'n', 'flakes', 'itch', 'bumps', 'reaction', 'tolerated',
-            'mixed', 'unknown', 'difference', 'bottles', 'negative', 'positive',
+            'mixed', 'unknown', 'difference', 'bottles', 'negative', 'positive', 'recommendation',
         }
         tree.numeric_columns = numeric_columns.intersection(columns)
         for column, label, width in zip(columns, labels, widths):
@@ -280,15 +284,21 @@ class App(ctk.CTk):
             break
 
     def build_products(self):
-        ctk.CTkLabel(self.product_tab, text='Add the exact formula from your label. Use a new product entry if the formula changes.',
-                  wraplength=850).pack(anchor='w', pady=(0, 10))
+        top = ctk.CTkFrame(self.product_tab, fg_color='transparent')
+        top.pack(fill='x', pady=(0, 10))
+        ctk.CTkLabel(top, text='Add the exact formula from your label. Use a new product entry if the formula changes.',
+                  wraplength=850).pack(side='left')
+        self.recommendation_info_button = ctk.CTkButton(
+            top, text='ⓘ', width=36, command=self.show_recommendation_info)
+        self.recommendation_info_button.pack(side='right')
         self.product_tree = self.table(self.product_tab,
-            ('brand', 'name', 'n', 'negative', 'positive', 'location'),
-            ('Brand', 'Product / formula', 'Ingredients', 'Negative ingredients', 'Positive ingredients', 'Bought at'),
-            (170, 350, 90, 160, 160, 180))
+            ('brand', 'name', 'n', 'negative', 'positive', 'recommendation', 'location'),
+            ('Brand', 'Product / formula', 'Ingredients', 'Negative ingredients', 'Positive ingredients', 'Recommendation (0–100)', 'Bought at'),
+            (170, 350, 90, 160, 160, 190, 180))
         buttons = ctk.CTkFrame(self.product_tab, fg_color='transparent')
         buttons.pack(fill='x', pady=10)
         for text, command in [('Add product', lambda: self.product_dialog()),
+                              ('Import from link', self.import_dialog),
                               ('Edit selected', self.edit_product), ('Delete selected', self.delete_product)]:
             ctk.CTkButton(buttons, text=text, command=command,
                           fg_color='#2563eb', hover_color='#1d4ed8').pack(side='left', padx=(0, 8))
@@ -296,8 +306,21 @@ class App(ctk.CTk):
         self.product_empty = ctk.CTkLabel(self.product_tab, text='', text_color=('#597067', '#a6b8af'))
         self.product_empty.pack(anchor='w')
         ctk.CTkLabel(self.product_tab, text='Negative / positive counts show your tagged ingredients / total reviewed ingredients. '
-                    'These are your chosen tags, not safety ratings.',
+                    'Recommendation is a personal tag score, not a safety rating.',
                   wraplength=850).pack(anchor='w')
+
+    def show_recommendation_info(self):
+        messagebox.showinfo('About the recommendation indicator',
+            'This 0–100 indicator measures how well a formula matches your ingredient tags.\n\n'
+            'Score = 50 + 50 × (positive ingredient count − negative ingredient count) / total ingredients.\n\n'
+            '50 is neutral: no tags or equal positive and negative counts. More positive tags raise '
+            'the score; more negative tags lower it. Only a list made entirely of positive tags reaches '
+            '100; a list made entirely of negative tags reaches 0.\n\n'
+            'Example: 3 positive and 1 negative out of 20 ingredients gives 55. '
+            'Each distinct reviewed ingredient counts once. The number is not a percentage of safety, '
+            'a medical recommendation, or proof that a product will suit you. It does not measure '
+            'concentration, interactions or your diary reactions.',
+            parent=self)
 
     def selected(self, tree):
         values = tree.selection()
@@ -352,38 +375,95 @@ class App(ctk.CTk):
         box.bind('<Control-a>', lambda event: (box.tag_add('sel', '1.0', 'end-1c'), 'break')[-1])
         return box
 
-    def product_dialog(self, product=None):
+    def import_dialog(self):
+        window, frame = self.dialog('Import shampoo from a link')
+        url = self.field(frame, 0, 'Product link *')
+        status = tk.StringVar(value='Paste a link to one product. You can review the extracted details before saving.')
+        ctk.CTkLabel(frame, textvariable=status, wraplength=480, justify='left').grid(
+            row=1, column=1, sticky='w', pady=12)
+        results = queue.Queue()
+
+        def fetch():
+            try:
+                link = validate_url(url.get())
+            except ProductImportError as exc:
+                status.set(str(exc))
+                return
+            button.configure(state='disabled')
+            status.set('Reading product page…')
+
+            def worker():
+                try:
+                    results.put((fetch_product(link), None))
+                except Exception as exc:
+                    results.put((None, str(exc) if isinstance(exc, ProductImportError)
+                                 else 'Could not import this page. Try another product link or add it manually.'))
+
+            def poll():
+                if not window.winfo_exists():
+                    return
+                try:
+                    imported, error = results.get_nowait()
+                except queue.Empty:
+                    self.after(100, poll)
+                    return
+                if error:
+                    status.set(error)
+                    button.configure(state='normal')
+                    return
+                window.destroy()
+                self.product_dialog(prefill=imported)
+
+            threading.Thread(target=worker, daemon=True).start()
+            self.after(100, poll)
+
+        button = ctk.CTkButton(frame, text='Read product page', command=fetch)
+        button.grid(row=2, column=1, sticky='e', pady=12)
+        return window
+
+    def product_dialog(self, product=None, prefill=None):
         p = dict(product) if product is not None else {}
-        window, frame = self.dialog('Edit product' if p else 'Add product')
+        if prefill:
+            p = dict(name=prefill.name, brand=prefill.brand, raw=prefill.raw,
+                     source_url=prefill.source_url)
+        editing = product is not None
+        window, frame = self.dialog('Edit product' if editing else 'Review imported product' if prefill else 'Add product')
         name = self.field(frame, 0, 'Product / formula *', p.get('name', ''))
         brand = self.field(frame, 1, 'Brand', p.get('brand', ''))
         location = self.field(frame, 2, 'Bought at', p.get('location', ''))
-        raw = self.textbox(frame, 3, 'Original ingredients *', p.get('raw', ''), 5)
-        reviewed = self.textbox(frame, 5, 'Reviewed ingredients *\nOne ingredient per line',
-                                '\n'.join(self.store.ingredients(p['id'])) if p else '', 7)
+        source = self.field(frame, 3, 'Source link', p.get('source_url', ''))
+        raw = self.textbox(frame, 4, 'Original ingredients *', p.get('raw', ''), 5)
+        reviewed = self.textbox(frame, 6, 'Reviewed ingredients *\nOne ingredient per line',
+            '\n'.join(self.store.ingredients(p['id'])) if editing else
+            '\n'.join(parse_ingredients(prefill.raw)) if prefill else '', 7)
 
         def preview():
             reviewed.delete('1.0', 'end')
             reviewed.insert('1.0', '\n'.join(parse_ingredients(text_value(raw))))
         ctk.CTkButton(frame, text='Parse list → review names below', command=preview,
-                      fg_color='#2563eb', hover_color='#1d4ed8').grid(row=4, column=1, sticky='w')
-        ctk.CTkLabel(frame, text='Check the preview before saving. English aliases are limited; Korean names remain unchanged.',
-                  wraplength=480).grid(row=6, column=1, sticky='w')
-        notes = self.textbox(frame, 7, 'Notes / label version', p.get('notes', ''), 3)
+                      fg_color='#2563eb', hover_color='#1d4ed8').grid(row=5, column=1, sticky='w')
+        ctk.CTkLabel(frame, text='\n'.join(prefill.warnings) if prefill else
+                    'Check the preview before saving. English aliases are limited; Korean names remain unchanged.',
+                    wraplength=480, justify='left').grid(row=7, column=1, sticky='w')
+        notes = self.textbox(frame, 8, 'Notes / label version', p.get('notes', ''), 3)
 
         def save():
-            if p and (text_value(raw) != p['raw'] or
+            if source.get().strip():
+                validate_url(source.get())
+            if editing and (text_value(raw) != p['raw'] or
                       text_value(reviewed).splitlines() != self.store.ingredients(p['id'])):
                 if not messagebox.askyesno('Update formula?',
                         'Existing diary entries will use these edited ingredients. For a reformulation, cancel and add a new product. Save this correction?',
                         parent=window):
                     return
             self.store.save_product(name.get(), brand.get(), text_value(raw),
-                                    text_value(reviewed).splitlines(), text_value(notes), location.get(), p.get('id'))
+                                    text_value(reviewed).splitlines(), text_value(notes), location.get(), p.get('id'),
+                                    source_url=source.get())
             window.destroy()
             self.refresh()
         ctk.CTkButton(frame, text='Save product', command=lambda: self.guard(save),
-                      fg_color='#2563eb', hover_color='#1d4ed8').grid(row=8, column=1, sticky='e', pady=8)
+                      fg_color='#2563eb', hover_color='#1d4ed8').grid(row=9, column=1, sticky='e', pady=8)
+        return window
 
     def build_diary(self):
         ctk.CTkLabel(self.diary_tab, text='Log observed symptoms and context. “Tolerated” is your assessment; zero symptoms do not automatically mean tolerated.',
@@ -557,10 +637,12 @@ class App(ctk.CTk):
         self.diary_empty.configure(text='' if entries else 'No observations yet. Add a product, then record your first observation.')
         self.product_tree.delete(*self.product_tree.get_children())
         for p in self.store.products():
-            counts = ingredient_flag_counts(self.store.ingredients(p['id']))
+            ingredients = self.store.ingredients(p['id'])
+            counts = ingredient_flag_counts(ingredients)
             self.product_tree.insert('', 'end', iid=p['id'], values=(p['brand'], p['name'],
                 counts['total'], f"{counts['negative']} / {counts['total']}",
-                f"{counts['positive']} / {counts['total']}", p['location']))
+                f"{counts['positive']} / {counts['total']}",
+                f'{ingredient_recommendation_score(ingredients):.1f}', p['location']))
         self.diary_tree.delete(*self.diary_tree.get_children())
         for e in self.store.entries():
             self.diary_tree.insert('', 'end', iid=e['id'], values=tuple(e[k] for k in

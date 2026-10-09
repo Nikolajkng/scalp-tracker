@@ -1,6 +1,6 @@
 # Scalp Tracker
 
-A small offline desktop application for recording shampoo formulas and scalp observations.
+A desktop application for recording shampoo formulas and scalp observations.
 Built with Python, CustomTkinter and SQLite. No account, server or API key.
 The interface includes dark/light themes, spaced blue navigation buttons above the
 summary cards, auto-sized tables with thick white column separators, centered numeric
@@ -19,7 +19,8 @@ python3 -m pip install -r requirements.txt
 ```
 
 On Windows, use `python -m pip install -r requirements.txt` inside your activated environment.
-Installation requires internet access; the application itself runs offline.
+Installation and optional product-link imports require internet access.
+Recording observations, comparisons, backups and exports work offline.
 
 4. Run one of the following commands with Python 3.10 or newer:
 
@@ -45,8 +46,9 @@ must match the interpreter used by your environment.
 
 Close the running application. Back up your database, then replace the source files
 with this version and install `requirements.txt` inside your existing environment.
-Keep your environment folder and database. This update does not change the schema
-or default data location, so your existing records appear automatically. If you
+Keep your environment folder and database. On first startup, this update adds an
+optional source-link field to existing databases; existing records are preserved.
+The default data location is unchanged. If you
 previously used `--db`, continue passing the same path.
 
 Use the **Dark / Light** menu in the upper-right corner to switch appearance.
@@ -77,6 +79,39 @@ You can start by entering your past Labo-H and Australian Bodycare experiences,
 using the exact variants and labels you actually used. There is no need to
 repeat an exposure to populate the application.
 
+## Import a shampoo from a product link
+
+In **Products**, click **Import from link**, paste a URL to one shampoo, then
+click **Read product page**. The app reads the page in the background and opens
+an editable review form with the product name, brand, full ingredient text,
+parsed ingredient preview and source link. Correct any fields, confirm the
+variant/formula against your bottle, then click **Save product**.
+Purchase location remains yours to enter; a web listing does not establish
+where you bought the bottle. The source link is retained when editing,
+backing up or exporting products, and can also be entered manually.
+
+The importer reads Product JSON-LD, labeled ingredient sections/accordions
+and tables, including English, Danish and Korean headings. It also reads
+Matas's embedded product ingredient-tab data, excluding pH text and label
+disclaimers. The supplied Matas Dybderensende Shampoo example yielded its name,
+brand and 14 ingredients in a live check. A trailing full stop copied onto a
+Matas URL is removed only if that URL returns 404.
+
+Retailer formats vary. The importer requires a clear full list: it refuses
+missing, truncated or conflicting lists rather than generating ingredients.
+Pages that require JavaScript, login, automated-access challenges, or
+image-only ingredient lists may require manual entry. Korean names remain
+in Korean; automatic translation and OCR are not included.
+Olive Young's current Korean product page loads its ingredient details
+separately; full extraction for that page is not yet verified.
+Successful extraction still needs review because pages can show another
+country's formulation or an older label.
+
+No account or API key is needed. Network requests happen only when you import
+a link; HTTPS certificate verification stays enabled. Downloads and redirects
+have limits, and failures leave your saved products unchanged. Importing the
+same URL again creates a new record after review; it does not merge histories.
+
 ## How the comparison works
 
 The Products table shows the brand, product/formula name, number of distinct
@@ -84,6 +119,19 @@ reviewed ingredients, negative and positive ingredient counts, and purchase
 location. A count such as **2 / 23** means two tagged ingredients among 23 reviewed
 ingredients. These counts describe presence, not concentration or ingredient
 percentages in the shampoo.
+
+**Recommendation (0–100)** is a personal preference indicator:
+
+`50 + 50 × (positive count − negative count) / total ingredients`
+
+50 is neutral (no tags or balanced tags). More positive ingredients raise the
+score; more negative ingredients lower it. For example, 3 positives and
+1 negative out of 20 ingredients gives 55. All-positive lists score 100;
+all-negative lists score 0. Counts use distinct reviewed ingredients,
+and the score updates after formula edits and imports.
+Click the **ⓘ** button in Products for the explanation. This is not a medical
+safety measurement, probability or proof that a shampoo is suitable; it does
+not account for concentrations, interactions or diary reactions.
 
 The user-selected **Negative** tags match menthol, peppermint oil, cornmint oil,
 tea tree oil (including common botanical INCI oil names), and ingredient names
@@ -206,7 +254,9 @@ ingredient edits; the original list and notes help you keep provenance.
 
 Default database: `ScalpTracker/scalp.sqlite3` in your user home folder. Moving
 the source folder or launching from a different directory does not change it.
-The app does not make network requests or use analytics. The database is an
+The optional link importer requests the supplied website and follows its
+redirects. Ordinary tracking features stay offline; the app does not use analytics.
+The database is an
 ordinary unencrypted local file: your operating system, backups or synced home
 folder may still expose/copy it. CSV exports and backups contain your observations.
 
@@ -230,7 +280,8 @@ for safer viewing. Use SQLite backups when you need the exact original data.
 | File | Responsibility |
 |---|---|
 | `app.py` | CustomTkinter screens, dialogs, themes, events and input handling |
-| `requirements.txt` | Pinned CustomTkinter dependency |
+| `requirements.txt` | Pinned GUI and web-import dependencies |
+| `product_import.py` | Product-page fetching and reviewed ingredient extraction |
 | `core.py` | SQLite schema, validation, parsing, comparisons, backup and export |
 | `tests/test_core.py` | Regression tests using temporary databases |
 

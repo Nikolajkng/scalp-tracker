@@ -5,10 +5,23 @@ import unittest
 from pathlib import Path
 
 from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
-                  ingredient_categories)
+                  ingredient_categories, ingredient_recommendation_score)
 
 
 class TrackerTests(unittest.TestCase):
+    def test_recommendation_score_is_normalized_personal_tag_balance(self):
+        samples = [
+            ([], 50.0), (['water'], 50.0), (['menthol'], 0.0),
+            (['glycerin'], 100.0), (['menthol', 'glycerin'], 50.0),
+            (['water', 'menthol'], 25.0), (['water', 'glycerin'], 75.0),
+            (['Water', 'Aqua', 'Glycerin', 'GLYCERIN'], 75.0),
+            (['glycerin', 'ceramide np', 'colloidal oatmeal', 'menthol']
+             + [f'neutral ingredient {index}' for index in range(16)], 55.0),
+        ]
+        for names, expected in samples:
+            with self.subTest(names=names):
+                self.assertEqual(ingredient_recommendation_score(names), expected)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)
@@ -165,6 +178,28 @@ class TrackerTests(unittest.TestCase):
             rows = list(csv.DictReader(f))
         self.assertEqual(rows[0]['name'], "'=unsafe formula")
         self.assertEqual(rows[0]['raw'], 'Water, 정제수')
+
+    def test_existing_database_migrates_and_source_links_survive_edits_and_backup(self):
+        old_path = self.path / 'old.sqlite3'
+        with sqlite3.connect(old_path) as db:
+            db.execute('CREATE TABLE products(id INTEGER PRIMARY KEY, name TEXT NOT NULL, '
+                       'brand TEXT NOT NULL, raw TEXT NOT NULL, notes TEXT NOT NULL, location TEXT NOT NULL)')
+            db.execute("INSERT INTO products VALUES(1, 'Existing', 'Brand', 'Water', 'Notes', 'Shop')")
+        store = Store(old_path)
+        try:
+            self.assertEqual(store.products()[0]['source_url'], '')
+            store.save_product('Existing', 'Brand', 'Water', ['water'], notes='Notes',
+                               location='Shop', product_id=1, source_url='https://shop.example/shampoo')
+            store.backup(self.path / 'migrated-backup.sqlite3')
+        finally:
+            store.close()
+        recovered = Store(self.path / 'migrated-backup.sqlite3')
+        try:
+            self.assertEqual(recovered.products()[0]['source_url'], 'https://shop.example/shampoo')
+            self.assertEqual(recovered.products()[0]['notes'], 'Notes')
+            self.assertEqual(recovered.products()[0]['location'], 'Shop')
+        finally:
+            recovered.close()
 
 
 if __name__ == '__main__':

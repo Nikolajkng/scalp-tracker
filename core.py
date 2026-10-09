@@ -117,6 +117,14 @@ def ingredient_flag_counts(names):
             'total': len(flags)}
 
 
+def ingredient_recommendation_score(names):
+    """Personal tag balance, not a medical safety or effectiveness measurement."""
+    counts = ingredient_flag_counts(names)
+    if not counts['total']:
+        return 50.0
+    return round(50 + 50 * (counts['positive'] - counts['negative']) / counts['total'], 1)
+
+
 def parse_ingredients(raw):
     """Split only outside parentheses; keep original text in the product record.
 
@@ -178,6 +186,9 @@ class Store:
                 container TEXT NOT NULL, notes TEXT NOT NULL
             );
         ''')
+        if 'source_url' not in {row['name'] for row in self.db.execute('PRAGMA table_info(products)')}:
+            self.db.execute("ALTER TABLE products ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
+            self.db.commit()
 
     def products(self):
         return self.db.execute('SELECT * FROM products ORDER BY name, id').fetchall()
@@ -186,17 +197,18 @@ class Store:
         return [r[0] for r in self.db.execute(
             'SELECT name FROM ingredients WHERE product_id=? ORDER BY name', (product_id,))]
 
-    def save_product(self, name, brand, raw, ingredients, notes='', location='', product_id=None):
+    def save_product(self, name, brand, raw, ingredients, notes='', location='', product_id=None,
+                     source_url=''):
         names = normalize_lines(ingredients)
         if not name.strip() or not raw.strip() or not names:
             raise ValueError('Provide a product name, original ingredients and reviewed ingredient names.')
-        values = (name.strip(), brand.strip(), raw.strip(), notes.strip(), location.strip())
+        values = (name.strip(), brand.strip(), raw.strip(), notes.strip(), location.strip(), source_url.strip())
         with self.db:
             if product_id is None:
                 product_id = self.db.execute(
-                    'INSERT INTO products(name,brand,raw,notes,location) VALUES(?,?,?,?,?)', values).lastrowid
+                    'INSERT INTO products(name,brand,raw,notes,location,source_url) VALUES(?,?,?,?,?,?)', values).lastrowid
             else:
-                self.db.execute('UPDATE products SET name=?,brand=?,raw=?,notes=?,location=? WHERE id=?',
+                self.db.execute('UPDATE products SET name=?,brand=?,raw=?,notes=?,location=?,source_url=? WHERE id=?',
                                 values + (product_id,))
                 self.db.execute('DELETE FROM ingredients WHERE product_id=?', (product_id,))
             self.db.executemany('INSERT INTO ingredients VALUES(?,?)', [(product_id, n) for n in names])
