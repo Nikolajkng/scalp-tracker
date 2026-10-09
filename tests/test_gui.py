@@ -195,7 +195,7 @@ class GuiTests(unittest.TestCase):
                 app.update()
                 self.assertEqual(len(app.tables), 4)
                 self.assertIn('Ingredient Categories', app.pages)
-                self.assertNotIn('mixed', app.compare_tree['columns'])
+                self.assertEqual(app.compare_tree.heading('mixed', 'text'), 'Tolerated & reacted')
                 self.assertEqual(app.compare_tree.heading('unknown', 'text'), 'Not assessed')
                 self.assertEqual(app.compare_tree.heading('difference', 'text'), 'Reaction Percentage')
                 with patch('app.messagebox.showinfo') as info:
@@ -299,6 +299,15 @@ class GuiTests(unittest.TestCase):
                                          .measure('Product / formula') + 28))
                 self.assertTrue(app.footer.winfo_ismapped())
                 self.assertLessEqual(app.footer.winfo_y() + app.footer.winfo_height(), app.winfo_height())
+                # Mixed histories count once per formula, not once per observation.
+                for _ in range(2):
+                    store.save_entry(pid, '2026-10-01', '2026-10-02', 'Tolerated', 0, 0, 0, 'Original bottle')
+                app.refresh()
+                for row in app.compare_tree.get_children():
+                    self.assertEqual(app.compare_tree.set(row, 'mixed'), '1')
+                    self.assertEqual(app.compare_tree.set(row, 'reaction'), '0 / 0')
+                    self.assertEqual(app.compare_tree.set(row, 'tolerated'), '0 / 0')
+                    self.assertEqual(app.compare_tree.set(row, 'difference'), '—')
                 app.symptom.set('Flakes')
                 app.refresh_comparison()
                 app.update()

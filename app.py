@@ -556,9 +556,9 @@ class App(ctk.CTk):
         self.summary = tk.StringVar()
         ctk.CTkLabel(self.compare_tab, textvariable=self.summary, wraplength=900).pack(anchor='w', pady=10)
         self.compare_tree = self.table(self.compare_tab,
-            ('ingredient', 'flag', 'bottles', 'reaction', 'tolerated', 'unknown', 'difference'),
-            ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Not assessed', 'Reaction Percentage'),
-            (270, 100, 140, 95, 95, 130, 170))
+            ('ingredient', 'flag', 'bottles', 'reaction', 'tolerated', 'mixed', 'unknown', 'difference'),
+            ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Tolerated & reacted', 'Not assessed', 'Reaction Percentage'),
+            (270, 100, 140, 95, 95, 170, 130, 170))
         self.compare_tree.bind('<<TreeviewSelect>>', self.ingredient_detail)
         self.detail = tk.StringVar(value='Select an ingredient for details. Click a Positive or Negative flag to see matching bottles / formulas.')
         ctk.CTkLabel(self.compare_tab, textvariable=self.detail, wraplength=900).pack(anchor='w', pady=10)
@@ -571,7 +571,9 @@ class App(ctk.CTk):
             'It is not the probability of a reaction. A dash means a comparison group is missing. '
             '🚩 marks +20 points or higher; ✅ marks −20 points or lower.\n\n'
             'Bottles / formulas counts distinct saved products, not physical bottles or washes. '
-            'Products with both reaction and tolerated observations remain excluded from the percentages. '
+            'Tolerated & reacted counts products containing this ingredient with both tolerated and '
+            'reaction observations. Each formula counts once, even after repeated observations. '
+            'These products remain excluded from both comparison percentages. '
             'Not assessed includes products with no qualifying assessment for the selected symptom, '
             'including reactions only to another symptom.\n\n'
             'Your positive and negative flags are separate personal tags. These patterns do not '
@@ -626,11 +628,11 @@ class App(ctk.CTk):
                 difference = f"{points:+.1f}{marker}"
             self.compare_tree.insert('', 'end', iid=key, values=(row['name'], ingredient_flag(row['name']) or '—', row['bottles'],
                 f"{row['reaction']} / {totals['reaction']}", f"{row['tolerated']} / {totals['tolerated']}",
-                row['unknown'], difference))
+                row['mixed'], row['unknown'], difference))
         suffix = ('Add explicitly tolerated and reaction observations to compare.'
                   if not totals['reaction'] or not totals['tolerated'] else 'Exploratory evidence only; no confidence or causal score.')
         self.summary.set(f"Products: {totals['reaction']} reaction · {totals['tolerated']} tolerated · "
-                         f"{totals['mixed']} mixed (excluded) · {totals['unknown']} not assessed. {suffix}")
+                         f"{totals['mixed']} tolerated & reacted (excluded) · {totals['unknown']} not assessed. {suffix}")
         self.restore_table_sort(self.compare_tree)
         self.detail.set('Select an ingredient for details. Click a Positive or Negative flag to see matching bottles / formulas.')
 

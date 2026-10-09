@@ -167,15 +167,16 @@ separately identified physical bottles.
 | Bottles / formulas | Total saved product records containing this ingredient; one per record, including unassessed products |
 | Reaction | Products containing the ingredient in the reaction group / all products in that group |
 | Tolerated | Products containing the ingredient in the tolerated group / all products in that group |
+| Tolerated & reacted | Products containing the ingredient with both tolerated and reaction observations; each formula counts once |
 | Not assessed | Products containing the ingredient without qualifying assessed observations, including reactions only to another selected symptom |
 | Reaction Percentage | Reaction-group percentage minus tolerated-group percentage, in percentage points |
 
 **Reaction Percentage** is a renamed comparison column; the calculation is
 unchanged. It is not the likelihood that an ingredient causes a reaction.
 Click the **i** button beside the symptom selector to see the calculation,
-an example, marker thresholds and group definitions. Mixed products are no
-longer displayed in a separate table column, but remain excluded from both
-comparison percentages and appear in the summary.
+an example, marker thresholds and group definitions. Products with both outcomes
+appear in **Tolerated & reacted** and remain excluded from both comparison
+percentages. The summary also shows their total across all formulas.
 
 Click any table header once for ascending order and again for descending order.
 Text sorts alphabetically without case sensitivity; ISO dates sort
