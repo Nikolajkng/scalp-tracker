@@ -15,7 +15,7 @@ from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 
 from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
-                  ingredient_categories, ingredient_recommendation_score,
+                  ingredient_categories, product_recommendation,
                   CATEGORY_DESCRIPTIONS, OUTCOMES)
 from product_import import fetch_product, validate_url, ImportError as ProductImportError
 
@@ -153,6 +153,7 @@ class App(ctk.CTk):
         numeric_columns = {
             'n', 'flakes', 'itch', 'bumps', 'reaction', 'tolerated',
             'both_outcomes', 'unknown', 'difference', 'bottles', 'negative', 'positive', 'recommendation',
+            'reaction_entries', 'tolerated_entries',
         }
         tree.numeric_columns = numeric_columns.intersection(columns)
         for column, label, width in zip(columns, labels, widths):
@@ -198,7 +199,7 @@ class App(ctk.CTk):
         column = tree.identify_column(event.x)
         if not item or tree.column(column, 'id') != 'flag':
             return
-        if tree.set(item, 'flag') not in ('Reacted', 'Neutral'):
+        if tree.set(item, 'flag') not in ('Reacted', 'Neutral', 'Investigate'):
             return
         tree.selection_set(item)
         tree.focus(item)
@@ -309,9 +310,9 @@ class App(ctk.CTk):
             top, text='i', width=36, font=ctk.CTkFont(size=20, weight='bold'), corner_radius=18, command=self.show_recommendation_info)
         self.recommendation_info_button.pack(side='right')
         self.product_tree = self.table(self.product_tab,
-            ('brand', 'name', 'n', 'negative', 'positive', 'recommendation', 'location'),
-            ('Brand', 'Product / formula', 'Ingredients', 'Reacted ingredients', 'Neutral ingredients', 'Recommendation (0–100)', 'Bought at'),
-            (170, 350, 90, 160, 160, 190, 180))
+            ('brand', 'name', 'n', 'negative', 'positive', 'reaction_entries', 'tolerated_entries', 'recommendation', 'location'),
+            ('Brand', 'Product / formula', 'Ingredients', 'Reacted ingredients', 'Neutral ingredients', 'Reaction observations', 'Tolerated observations', 'Recommendation (0–100)', 'Bought at'),
+            (170, 350, 90, 160, 160, 180, 180, 190, 180))
         buttons = ctk.CTkFrame(self.product_tab, fg_color='transparent')
         buttons.pack(fill='x', pady=10)
         for text, command in [('Add product', lambda: self.product_dialog()),
@@ -323,20 +324,24 @@ class App(ctk.CTk):
         self.product_empty = ctk.CTkLabel(self.product_tab, text='', text_color=('#597067', '#a6b8af'))
         self.product_empty.pack(anchor='w')
         ctk.CTkLabel(self.product_tab, text='Reacted / neutral counts show your tagged ingredients / total reviewed ingredients. '
-                    'Recommendation is a personal tag score, not a safety rating.',
+                    'Recommendation uses your diary: 100 means only tolerated observations; — means no assessments.',
                   wraplength=850).pack(anchor='w')
 
     def show_recommendation_info(self):
         messagebox.showinfo('About the recommendation indicator',
-            'This 0–100 indicator measures how well a formula matches your ingredient tags.\n\n'
-            'Score = 50 + 50 × (Neutral-tagged count − Reacted-tagged count) / total ingredients.\n\n'
-            '50 is the midpoint: no tags or equal counts. Neutral tags (the original preferred list) raise '
-            'the score; Reacted tags lower it. Only a list made entirely of Neutral tags reaches '
-            '100; a list made entirely of Reacted tags reaches 0.\n\n'
-            'Example: 3 Neutral-tagged and 1 Reacted-tagged out of 20 ingredients gives 55. '
-            'Each distinct reviewed ingredient counts once. The number is not a percentage of safety, '
-            'a medical recommendation, or proof that a product will suit you. It does not measure '
-            'concentration, interactions or your diary reactions.',
+            'This 0–100 indicator describes your recorded tolerance for this product/formula.\n\n'
+            'Score = 100 × tolerated observations / (tolerated + reaction observations).\n\n'
+            '100 means at least one Tolerated observation and zero Reaction observations. '
+            '0 means all assessed observations were Reaction. A dash means no assessed history: '
+            'an untried product is not treated as tolerated. Unknown / not assessed entries are excluded.\n\n'
+            'Examples: 3 tolerated and 0 reactions = 100; 3 tolerated and 1 reaction = 75; '
+            '0 tolerated and 2 reactions = 0. Scores with any reaction are capped at 99.9 '
+            'so rounding never shows 100 for a mixed history.\n\n'
+            'The two observation columns show the evidence behind the score. Each assessed diary '
+            'entry counts once; the score uses your explicit assessment, all symptoms and all dates. '
+            'It updates after adding, editing or deleting observations. Ingredient tags do not affect it. '
+            'This is not a percentage of safety or a prediction of future reactions; '
+            '100 from one observation has less supporting history than 100 from twenty.',
             parent=self)
 
     def selected(self, tree):
@@ -560,7 +565,7 @@ class App(ctk.CTk):
             ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Tolerated & reacted', 'Not assessed', 'Reaction Percentage'),
             (270, 100, 140, 95, 95, 170, 130, 170))
         self.compare_tree.bind('<<TreeviewSelect>>', self.ingredient_detail)
-        self.detail = tk.StringVar(value='Select an ingredient for details. Click a Neutral or Reacted flag to see matching bottles / formulas.')
+        self.detail = tk.StringVar(value='Select an ingredient for details. Click a flag to see matching bottles / formulas.')
         ctk.CTkLabel(self.compare_tab, textvariable=self.detail, wraplength=900).pack(anchor='w', pady=10)
 
     def show_comparison_info(self):
@@ -577,7 +582,9 @@ class App(ctk.CTk):
             'Only formulas whose own history has both outcomes are excluded from the comparison percentages. '
             'Not assessed includes products with no qualifying assessment for the selected symptom, '
             'including reactions only to another symptom.\n\n'
-            'Reacted and Neutral flags are your selected ingredient tags, not automatic diary assessments. These patterns do not '
+            'Reacted marks your first screening priorities; Investigate marks secondary priorities; '
+            'Neutral keeps your preferred ingredient list. These tags are not automatic diary assessments '
+            'or diagnosed allergies. These patterns do not '
             'account for concentration or other exposures and do not establish causation or safety.',
             parent=self)
 
@@ -603,7 +610,7 @@ class App(ctk.CTk):
         self.category_description.set(CATEGORY_DESCRIPTIONS.get(selected,
             'Group ingredients by common roles. One ingredient can appear in several categories; '
             'unrecognized labels remain unclassified. Categories are not safety ratings.')
-            + ' Click a Neutral or Reacted flag to see matching bottles / formulas.')
+            + ' Click a flag to see matching bottles / formulas.')
         self.category_tree.delete(*self.category_tree.get_children())
         _, rows = self.store.comparisons()
         for row in rows:
@@ -635,7 +642,7 @@ class App(ctk.CTk):
         self.summary.set(f"Products: {totals['reaction']} reaction · {totals['tolerated']} tolerated · "
                          f"{totals['mixed']} formulas with both outcomes (excluded) · {totals['unknown']} not assessed. {suffix}")
         self.restore_table_sort(self.compare_tree)
-        self.detail.set('Select an ingredient for details. Click a Neutral or Reacted flag to see matching bottles / formulas.')
+        self.detail.set('Select an ingredient for details. Click a flag to see matching bottles / formulas.')
 
     def ingredient_detail(self, event=None):
         selected = self.compare_tree.selection()
@@ -660,13 +667,19 @@ class App(ctk.CTk):
         self.product_empty.configure(text='' if products else 'No products yet. Add your first shampoo to get started.')
         self.diary_empty.configure(text='' if entries else 'No observations yet. Add a product, then record your first observation.')
         self.product_tree.delete(*self.product_tree.get_children())
-        for p in self.store.products():
+        histories = {p['id']: [] for p in products}
+        for entry in entries:
+            histories[entry['product_id']].append(entry)
+        for p in products:
             ingredients = self.store.ingredients(p['id'])
             counts = ingredient_flag_counts(ingredients)
+            recommendation = product_recommendation(histories[p['id']])
+            score = recommendation['score']
             self.product_tree.insert('', 'end', iid=p['id'], values=(p['brand'], p['name'],
                 counts['total'], f"{counts['negative']} / {counts['total']}",
                 f"{counts['positive']} / {counts['total']}",
-                f'{ingredient_recommendation_score(ingredients):.1f}', p['location']))
+                recommendation['reaction'], recommendation['tolerated'],
+                f'{score:.1f}' if score is not None else '—', p['location']))
         self.diary_tree.delete(*self.diary_tree.get_children())
         for e in self.store.entries():
             values = dict(e)

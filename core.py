@@ -22,6 +22,18 @@ NEGATIVE_INGREDIENTS = {
     'mentha arvensis oil', 'mentha arvensis leaf oil',
     'mentha canadensis oil', 'mentha canadensis leaf oil',
     'melaleuca alternifolia oil', 'melaleuca alternifolia leaf oil',
+    '4-terpineol', 'terpinen-4-ol',
+    '멘톨', '페퍼민트오일', '페퍼민트잎오일', '콘민트오일',
+    '티트리잎오일', '티트리오일', '4-터피네올',
+}
+INVESTIGATE_INGREDIENTS = {
+    'rosmarinus officinalis leaf oil', 'salvia rosmarinus leaf oil',
+    'rosemary oil', 'rosemary leaf oil',
+    'eucalyptus leaf oil', 'eucalyptus oil', 'eucalyptus globulus leaf oil',
+    'eucalyptus globulus oil', 'eucalyptus radiata leaf oil',
+    'capsicum fruit extract', 'capsicum annuum fruit extract',
+    'capsicum frutescens fruit extract',
+    '로즈마리잎오일', '로즈마리오일', '유칼립투스잎오일', '고추열매추출물',
 }
 POSITIVE_INGREDIENTS = {
     'glycerin', 'glycerine', 'glycerol', 'colloidal oatmeal',
@@ -45,7 +57,8 @@ CATEGORY_DESCRIPTIONS = {
 CATEGORY_LABELS = {
     'Fragrance': {'fragrance', 'limonene', 'linalool', 'citral', 'geraniol',
                   'citronellol', 'eugenol', 'coumarin', 'hexyl cinnamal',
-                  'benzyl salicylate', 'menthol'},
+                  'benzyl salicylate', 'menthol', '멘톨', '4-terpineol',
+                  'terpinen-4-ol', '4-터피네올'},
     'Anti-fungals': {'zinc pyrithione', 'pyrithione zinc', 'piroctone olamine',
                     'climbazole', 'ketoconazole', 'selenium sulfide',
                     'selenium disulfide', 'ciclopirox', 'ciclopirox olamine'},
@@ -85,9 +98,12 @@ def ingredient_categories(name):
     categories = {category for category, labels in CATEGORY_LABELS.items()
                   if name in labels or base in labels
                   or base.replace('sulphate', 'sulfate') in labels}
-    if re.search(r'\boil$', base):
+    if re.search(r'\boil$', base) or base in {
+        '페퍼민트오일', '페퍼민트잎오일', '콘민트오일', '티트리잎오일',
+        '티트리오일', '로즈마리잎오일', '로즈마리오일', '유칼립투스잎오일',
+    }:
         categories.add('Oils')
-    if base in NEGATIVE_INGREDIENTS and base != 'menthol':
+    if ('Oils' in categories and base in NEGATIVE_INGREDIENTS | INVESTIGATE_INGREDIENTS):
         categories.add('Fragrance')
     if re.fullmatch(r'ceramides?(?: [a-z0-9]+(?:-[a-z0-9]+)*)?', base):
         categories.add('Barrier support')
@@ -104,6 +120,8 @@ def ingredient_flag(name):
     if (name in NEGATIVE_INGREDIENTS or base in NEGATIVE_INGREDIENTS
             or re.search(r'\b(?:sulfates?|sulphates?)$', base)):
         return 'Reacted'
+    if name in INVESTIGATE_INGREDIENTS or base in INVESTIGATE_INGREDIENTS:
+        return 'Investigate'
     if (name in POSITIVE_INGREDIENTS or base in POSITIVE_INGREDIENTS
             or re.fullmatch(r'ceramides?(?: [a-z0-9]+(?:-[a-z0-9]+)*)?', base)):
         return 'Neutral'
@@ -117,12 +135,18 @@ def ingredient_flag_counts(names):
             'total': len(flags)}
 
 
-def ingredient_recommendation_score(names):
-    """Personal tag balance, not a medical safety or effectiveness measurement."""
-    counts = ingredient_flag_counts(names)
-    if not counts['total']:
-        return 50.0
-    return round(50 + 50 * (counts['positive'] - counts['negative']) / counts['total'], 1)
+def product_recommendation(history):
+    """Describe explicit diary assessments; unknown outcomes supply no evidence."""
+    reaction = tolerated = 0
+    for entry in history:
+        reaction += entry['outcome'] == 'Reaction'
+        tolerated += entry['outcome'] == 'Tolerated'
+    assessed = reaction + tolerated
+    score = round(100 * tolerated / assessed, 1) if assessed else None
+    # Reserve 100 for history with zero reactions, even after display rounding.
+    if reaction and score is not None:
+        score = min(score, 99.9)
+    return {'reaction': reaction, 'tolerated': tolerated, 'score': score}
 
 
 def parse_ingredients(raw):

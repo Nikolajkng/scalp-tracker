@@ -16,6 +16,62 @@ from unittest.mock import patch
 @unittest.skipUnless(os.environ.get('DISPLAY') or sys.platform in ('win32', 'darwin'),
                      'A graphical desktop is required for the GUI smoke test')
 class GuiTests(unittest.TestCase):
+    def test_diary_recommendations_update_per_product_after_edits_and_deletions(self):
+        from app import App
+        from core import Store
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / 'recommendations.sqlite3')
+            product_ids = {
+                name: store.save_product(name, '', raw, [raw.lower()])
+                for name, raw in [('Untried', 'Glycerin'), ('Unknown', 'Water'),
+                                  ('Tolerated', 'Menthol'), ('Reaction', 'Glycerin'),
+                                  ('Mixed', 'Water')]
+            }
+
+            def entry(name, outcome, symptom=0, entry_id=None):
+                return store.save_entry(product_ids[name], '2026-10-01', '2026-10-02',
+                                        outcome, symptom, 0, 0, 'Original bottle', entry_id=entry_id)
+
+            entry('Unknown', 'Unknown / not assessed', 5)
+            entry('Tolerated', 'Tolerated', 5)
+            entry('Reaction', 'Reaction', 0)
+            reaction_id = entry('Mixed', 'Reaction')
+            tolerated_ids = [entry('Mixed', 'Tolerated') for _ in range(3)]
+            app = App(store)
+            try:
+                app.update()
+                for name, score, reaction, tolerated in [
+                    ('Untried', '—', '0', '0'), ('Unknown', '—', '0', '0'),
+                    ('Tolerated', '100.0', '0', '1'), ('Reaction', '0.0', '1', '0'),
+                    ('Mixed', '75.0', '1', '3'),
+                ]:
+                    pid = str(product_ids[name])
+                    self.assertEqual(app.product_tree.set(pid, 'recommendation'), score)
+                    self.assertEqual(app.product_tree.set(pid, 'reaction_entries'), reaction)
+                    self.assertEqual(app.product_tree.set(pid, 'tolerated_entries'), tolerated)
+                app.sort_table(app.product_tree, 'recommendation', True)
+                self.assertEqual([app.product_tree.set(row, 'recommendation')
+                                  for row in app.product_tree.get_children()],
+                                 ['100.0', '75.0', '0.0', '—', '—'])
+                app.symptom.set('Bumps')
+                app.refresh()
+                self.assertEqual(app.product_tree.set(str(product_ids['Mixed']), 'recommendation'), '75.0')
+                entry('Mixed', 'Tolerated', entry_id=reaction_id)
+                app.refresh()
+                mixed = str(product_ids['Mixed'])
+                self.assertEqual(app.product_tree.set(mixed, 'recommendation'), '100.0')
+                self.assertEqual(app.product_tree.set(mixed, 'reaction_entries'), '0')
+                self.assertEqual(app.product_tree.set(mixed, 'tolerated_entries'), '4')
+                for entry_id in [reaction_id, *tolerated_ids]:
+                    store.delete('entry', entry_id)
+                app.refresh()
+                self.assertEqual(app.product_tree.set(mixed, 'recommendation'), '—')
+                self.assertEqual(app.product_tree.set(mixed, 'tolerated_entries'), '0')
+            finally:
+                for callback in app.tk.call('after', 'info'):
+                    app.after_cancel(callback)
+                app.quit_app()
+
     def test_link_import_runs_in_background_and_saves_only_after_review(self):
         import customtkinter as ctk
         from app import App
@@ -76,7 +132,7 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual(product['source_url'], 'https://shop.example/shampoo')
                 self.assertEqual(app.store.ingredients(product['id']), ['menthol', 'water'])
                 self.assertEqual(app.product_tree.set(str(product['id']), 'negative'), '1 / 2')
-                self.assertEqual(app.product_tree.set(str(product['id']), 'recommendation'), '25.0')
+                self.assertEqual(app.product_tree.set(str(product['id']), 'recommendation'), '—')
                 self.assertFalse(review.winfo_exists())
                 failed = app.import_dialog()
                 failed_url = next(w for w in widgets(failed) if isinstance(w, ctk.CTkEntry))
@@ -107,8 +163,8 @@ class GuiTests(unittest.TestCase):
         from core import Store
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / 'flags.sqlite3')
-            first = store.save_product('Same shampoo', 'Brand A', 'Water, Menthol, Glycerin',
-                                       ['water', 'menthol', 'glycerin'], location='Shop A')
+            first = store.save_product('Same shampoo', 'Brand A', 'Water, Menthol, Glycerin, 로즈마리잎오일',
+                                       ['water', 'menthol', 'glycerin', '로즈마리잎오일'], location='Shop A')
             second = store.save_product('Same shampoo', 'Brand B', 'Water, Menthol',
                                         ['water', 'menthol'], location='Shop B')
             store.save_product('Unflagged shampoo', '', 'Water', ['water'])
@@ -142,7 +198,8 @@ class GuiTests(unittest.TestCase):
                     app.sort_table(tree, 'ingredient', True)
                     app.update()
                     for ingredient, flag, count in (('menthol', 'Reacted', 2),
-                                                    ('glycerin', 'Neutral', 1)):
+                                                    ('glycerin', 'Neutral', 1),
+                                                    ('로즈마리잎오일', 'Investigate', 1)):
                         click(tree, ingredient, 'flag')
                         windows = [w for w in app.winfo_children() if isinstance(w, ctk.CTkToplevel)]
                         self.assertEqual(len(windows), 1)
@@ -258,7 +315,7 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual(app.compare_tree.set('0', 'bottles'), '1')
                 self.assertEqual(app.product_tree.set(str(pid), 'negative'), '0 / 2')
                 self.assertEqual(app.product_tree.set(str(pid), 'positive'), '1 / 2')
-                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '75.0')
+                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '0.0')
                 flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
                          for row in app.compare_tree.get_children()}
                 self.assertEqual(flags, {'water': '—', 'glycerin': 'Neutral'})
@@ -275,7 +332,7 @@ class GuiTests(unittest.TestCase):
                 app.refresh()
                 self.assertEqual(app.product_tree.set(str(pid), 'negative'), '1 / 3')
                 self.assertEqual(app.product_tree.set(str(pid), 'positive'), '1 / 3')
-                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '50.0')
+                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '0.0')
                 flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
                          for row in app.compare_tree.get_children()}
                 self.assertEqual(flags['menthol'], 'Reacted')
@@ -311,11 +368,13 @@ class GuiTests(unittest.TestCase):
                     self.assertEqual(app.compare_tree.set(row, 'both_outcomes'), '2')
                     self.assertEqual(app.compare_tree.set(row, 'reaction'), '1 / 1')
                     self.assertEqual(app.compare_tree.set(row, 'tolerated'), '1 / 1')
+                self.assertEqual(app.product_tree.set(str(tolerated_pid), 'recommendation'), '100.0')
                 store.delete('product', tolerated_pid)
                 # Mixed histories count once per formula, not once per observation.
                 for _ in range(2):
                     store.save_entry(pid, '2026-10-01', '2026-10-02', 'Tolerated', 0, 0, 0, 'Original bottle')
                 app.refresh()
+                self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '66.7')
                 for row in app.compare_tree.get_children():
                     self.assertEqual(app.compare_tree.set(row, 'both_outcomes'), '1')
                     self.assertEqual(app.compare_tree.set(row, 'reaction'), '0 / 0')

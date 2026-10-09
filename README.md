@@ -120,42 +120,63 @@ same URL again creates a new record after review; it does not merge histories.
 ## How the comparison works
 
 The Products table shows the brand, product/formula name, number of distinct
-reviewed ingredients, Reacted and Neutral ingredient counts, and purchase
-location. A count such as **2 / 23** means two tagged ingredients among 23 reviewed
+reviewed ingredients, Reacted and Neutral ingredient counts, Reaction observations,
+Tolerated observations, Recommendation, and purchase location.
+A count such as **2 / 23** means two tagged ingredients among 23 reviewed
 ingredients. These counts describe presence, not concentration or ingredient
 percentages in the shampoo.
 
-**Recommendation (0–100)** is a personal preference indicator:
+**Recommendation (0–100)** measures your recorded tolerance for each product/formula:
 
-`50 + 50 × (Neutral-tagged count − Reacted-tagged count) / total ingredients`
+`100 × tolerated observations / (tolerated observations + reaction observations)`
 
-50 is the midpoint (no tags or balanced tags). Neutral tags, the original
-preferred ingredient list, raise the score; Reacted tags lower it. For example,
-3 Neutral-tagged and 1 Reacted-tagged out of 20 ingredients gives 55.
-Lists containing only Neutral tags score 100; only Reacted tags score 0.
-Counts use distinct reviewed ingredients,
-and the score updates after formula edits and imports.
-Click the **i** button in Products for the explanation. This is not a medical
-safety measurement, probability or proof that a shampoo is suitable; it does
-not account for concentrations, interactions or diary reactions.
+100 means at least one explicitly Tolerated observation and **zero Reaction
+observations**. 0 means all assessed observations were Reaction. Mixed histories
+score between these: 3 tolerated and 1 reaction gives 75; 1 tolerated and
+3 reactions gives 25. If rounding would show 100 for a history with reactions,
+the score is capped at 99.9. A dash means no assessed history, including untried
+products and histories containing only Unknown / not assessed entries.
+
+The adjacent observation counts show the supporting history; sort Reaction
+observations ascending to compare the fewest recorded reactions, or Recommendation
+descending to compare the highest recorded tolerance rates. Each assessed diary
+entry counts once, across all dates and symptoms. Unknown entries are excluded;
+the explicit assessment is used even when symptom scores differ. Ingredient tags
+do not affect this score. Adding, editing or deleting observations recalculates it.
+Click the **i** button in Products for examples. This describes past observations,
+not a prediction or medical safety measurement. One tolerated observation provides
+less evidence than twenty, even when both histories score 100.
 
 The user-selected **Reacted** tags match menthol, peppermint oil, cornmint oil,
-tea tree oil (including common botanical INCI oil names), and ingredient names
+tea tree oil (including common botanical INCI oil names), **4-Terpineol**
+(also labeled Terpinen-4-ol), and ingredient names
 ending in sulfate/sulphate (singular or plural). This broad sulfate rule includes
 mineral sulfates such as magnesium sulfate, not only sulfate surfactants.
 Sulfonates and sulfoacetates are not matched by that rule.
+The supplied image adds these explicit Korean labels to the first screening group:
+**멘톨**, **페퍼민트오일**, **콘민트오일**, **티트리잎오일**, and **4-터피네올**.
+
+**Investigate** marks the image's secondary priorities: **Rosmarinus Officinalis
+Leaf Oil** (rosemary leaf oil / **로즈마리잎오일**), **Eucalyptus Leaf Oil**
+(including Eucalyptus Globulus Leaf Oil / **유칼립투스잎오일**), and **Capsicum
+Fruit Extract** (including Capsicum Annuum/Frutescens Fruit Extract /
+**고추열매추출물**). These are screening priorities, not diagnosed allergies.
+Different ingredients such as rosemary leaf extract, eucalyptus leaf extract,
+peppermint leaf extract and capsicum seed oil are not matched by these oil/fruit rules.
+
 The **Neutral** tags match glycerin/glycerine/glycerol, colloidal oatmeal,
 ceramide labels (such as Ceramide NP, AP, EOP or 3), and zinc pyrithione/pyrithione
 zinc. Ordinary oat extracts are not assumed to be colloidal oatmeal.
 Matching ignores case and recognizes parenthesized common names in botanical
-labels. It does not translate Korean or other ingredient names automatically.
+labels. The listed Korean aliases are matched explicitly; other Korean or foreign
+labels are not translated automatically.
 Only the reviewed ingredient list is used; duplicates are counted once.
 Tags update automatically after product edits and are shown in the
 Ingredient Patterns **Your flag** column. Tags are personal preferences,
-not automatic diary assessments or health or safety ratings. Renaming the tags
-does not change their recommendation weights, diary grouping or Reaction Percentage.
+not automatic diary assessments or health or safety ratings. Tags do not affect
+the diary-based Recommendation, diary grouping or Reaction Percentage.
 
-Click a **Reacted** or **Neutral** cell in the **Your flag** column of
+Click a **Reacted**, **Investigate** or **Neutral** cell in the **Your flag** column of
 Ingredient Patterns or Ingredient Categories to open a scrollable list of
 matching saved bottles/formulas. The list shows each product's name, brand,
 purchase location and record ID, including products without diary observations.
@@ -165,7 +186,7 @@ separately identified physical bottles.
 | Ingredient Patterns column | Measurement |
 |---|---|
 | Ingredient | Normalized reviewed ingredient name |
-| Your flag | Reacted, Neutral, or a dash for no matching personal tag |
+| Your flag | Reacted for first screening priorities, Investigate for secondary priorities, Neutral for your preferred list, or a dash for no matching personal tag |
 | Bottles / formulas | Total saved product records containing this ingredient; one per record, including unassessed products |
 | Reaction | Products containing the ingredient in the reaction group / all products in that group |
 | Tolerated | Products containing the ingredient in the tolerated group / all products in that group |

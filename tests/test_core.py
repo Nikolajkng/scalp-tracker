@@ -5,22 +5,24 @@ import unittest
 from pathlib import Path
 
 from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
-                  ingredient_categories, ingredient_recommendation_score)
+                  ingredient_categories, product_recommendation)
 
 
 class TrackerTests(unittest.TestCase):
-    def test_recommendation_score_is_normalized_personal_tag_balance(self):
+    def test_recommendation_uses_explicit_diary_outcomes(self):
         samples = [
-            ([], 50.0), (['water'], 50.0), (['menthol'], 0.0),
-            (['glycerin'], 100.0), (['menthol', 'glycerin'], 50.0),
-            (['water', 'menthol'], 25.0), (['water', 'glycerin'], 75.0),
-            (['Water', 'Aqua', 'Glycerin', 'GLYCERIN'], 75.0),
-            (['glycerin', 'ceramide np', 'colloidal oatmeal', 'menthol']
-             + [f'neutral ingredient {index}' for index in range(16)], 55.0),
+            (0, 0, 0, None), (0, 0, 3, None), (0, 1, 0, 100.0),
+            (0, 20, 3, 100.0), (1, 0, 0, 0.0), (2, 0, 5, 0.0),
+            (1, 1, 0, 50.0), (1, 3, 4, 75.0), (3, 1, 0, 25.0),
+            (1, 9999, 0, 99.9),
         ]
-        for names, expected in samples:
-            with self.subTest(names=names):
-                self.assertEqual(ingredient_recommendation_score(names), expected)
+        for reaction, tolerated, unknown, score in samples:
+            with self.subTest(reaction=reaction, tolerated=tolerated, unknown=unknown):
+                history = ([{'outcome': 'Reaction', 'flakes': 0}] * reaction
+                           + [{'outcome': 'Tolerated', 'flakes': 5}] * tolerated
+                           + [{'outcome': 'Unknown / not assessed', 'flakes': 5}] * unknown)
+                self.assertEqual(product_recommendation(history),
+                                 {'reaction': reaction, 'tolerated': tolerated, 'score': score})
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -52,17 +54,30 @@ class TrackerTests(unittest.TestCase):
             'Melaleuca Alternifolia (Tea Tree) Leaf Oil',
             'Sodium Lauryl Sulfate', 'Sodium Laureth Sulphate',
             'Ammonium Lauryl Sulfate', 'Magnesium Sulfate',
+            '4-Terpineol', 'Terpinen-4-ol',
+            '멘톨', '페퍼민트오일', '콘민트오일', '티트리잎오일', '4-터피네올',
         ]
         positive = [
             'Glycerin', 'Glycerine', 'Colloidal Oatmeal', 'Oatmeal (Colloidal)',
             'Ceramide NP', 'Ceramide AP', 'Ceramide EOP', 'Ceramide 3',
             'Ceramides', 'Pyrithione Zinc', 'Zinc Pyrithione',
         ]
-        neutral = [
+        unflagged = [
             'Water', 'Menthyl Lactate', 'Mentha Piperita Leaf Extract',
             'Melaleuca Alternifolia Leaf Extract', 'Sodium C14-16 Olefin Sulfonate',
             'Sodium Lauryl Sulfoacetate', 'Glyceryl Stearate', 'Glycereth-26',
             'Avena Sativa Kernel Extract', 'Zinc Oxide', 'Sulfate-free',
+            'Rosmarinus Officinalis Leaf Extract', 'Eucalyptus Globulus Leaf Extract',
+            'Capsicum Annuum Seed Oil', 'Alpha-Terpineol',
+        ]
+        investigate = [
+            'Rosmarinus Officinalis Leaf Oil', 'Rosmarinus Officinalis (Rosemary) Leaf Oil',
+            'Salvia Rosmarinus Leaf Oil', 'Rosemary Oil',
+            'Eucalyptus Leaf Oil', 'Eucalyptus Globulus Leaf Oil',
+            'Eucalyptus Globulus (Eucalyptus) Leaf Oil',
+            'Capsicum Fruit Extract', 'Capsicum Annuum Fruit Extract',
+            'Capsicum Frutescens Fruit Extract',
+            '로즈마리잎오일', '유칼립투스잎오일', '고추열매추출물',
         ]
         for name in negative:
             with self.subTest(name=name):
@@ -70,7 +85,10 @@ class TrackerTests(unittest.TestCase):
         for name in positive:
             with self.subTest(name=name):
                 self.assertEqual(ingredient_flag(name), 'Neutral')
-        for name in neutral:
+        for name in investigate:
+            with self.subTest(name=name):
+                self.assertEqual(ingredient_flag(name), 'Investigate')
+        for name in unflagged:
             with self.subTest(name=name):
                 self.assertEqual(ingredient_flag(name), '')
         self.assertEqual(ingredient_flag_counts(
@@ -131,6 +149,13 @@ class TrackerTests(unittest.TestCase):
     def test_categories_support_multiple_roles_and_leave_unknown_labels_unclassified(self):
         samples = {
             'Mentha Piperita (Peppermint) Oil': ('Oils', 'Fragrance'),
+            '4-Terpineol': ('Fragrance',),
+            'Rosmarinus Officinalis Leaf Oil': ('Oils', 'Fragrance'),
+            'Eucalyptus Globulus Leaf Oil': ('Oils', 'Fragrance'),
+            '페퍼민트오일': ('Oils', 'Fragrance'),
+            '로즈마리잎오일': ('Oils', 'Fragrance'),
+            '유칼립투스잎오일': ('Oils', 'Fragrance'),
+            '멘톨': ('Fragrance',),
             'ZINC PYRITHIONE': ('Anti-fungals',),
             'Piroctone Olamine': ('Anti-fungals',),
             'Glycerin': ('Moisture support',),
