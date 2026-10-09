@@ -14,6 +14,86 @@ from unittest.mock import patch
 @unittest.skipUnless(os.environ.get('DISPLAY') or sys.platform in ('win32', 'darwin'),
                      'A graphical desktop is required for the GUI smoke test')
 class GuiTests(unittest.TestCase):
+    def test_flag_cells_show_matching_product_records_in_both_tables(self):
+        import customtkinter as ctk
+        from app import App
+        from core import Store
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / 'flags.sqlite3')
+            first = store.save_product('Same shampoo', 'Brand A', 'Water, Menthol, Glycerin',
+                                       ['water', 'menthol', 'glycerin'], location='Shop A')
+            second = store.save_product('Same shampoo', 'Brand B', 'Water, Menthol',
+                                        ['water', 'menthol'], location='Shop B')
+            store.save_product('Unflagged shampoo', '', 'Water', ['water'])
+            app = App(store)
+            errors = []
+            app.report_callback_exception = lambda *error: errors.append(error)
+
+            def click(tree, ingredient, column):
+                item = next(row for row in tree.get_children()
+                            if tree.set(row, 'ingredient') == ingredient)
+                tree.see(item)
+                tree.xview_moveto(0)
+                app.update()
+                x, y, width, height = tree.bbox(item, column)
+                tree.event_generate('<ButtonRelease-1>', x=x + width // 2, y=y + height // 2)
+                app.update()
+
+            def label_texts(widget):
+                texts = []
+                if isinstance(widget, ctk.CTkLabel):
+                    texts.append(widget.cget('text'))
+                for child in widget.winfo_children():
+                    texts.append(label_texts(child))
+                return '\n'.join(texts)
+
+            try:
+                app.update()
+                for page, tree in ((app.compare_tab, app.compare_tree),
+                                   (app.category_tab, app.category_tree)):
+                    page.tkraise()
+                    app.sort_table(tree, 'ingredient', True)
+                    app.update()
+                    for ingredient, flag, count in (('menthol', 'Negative', 2),
+                                                    ('glycerin', 'Positive', 1)):
+                        click(tree, ingredient, 'flag')
+                        windows = [w for w in app.winfo_children() if isinstance(w, ctk.CTkToplevel)]
+                        self.assertEqual(len(windows), 1)
+                        text = label_texts(windows[0])
+                        self.assertIn(f'{flag} ingredient: {ingredient}', text)
+                        self.assertIn(f'{count} saved bottles / formulas', text)
+                        self.assertIn('Brand A', text)
+                        self.assertIn('Shop A', text)
+                        self.assertIn(f'Product record #{first}', text)
+                        self.assertNotIn('Unflagged shampoo', text)
+                        if flag == 'Negative':
+                            self.assertIn('Brand B', text)
+                            self.assertIn('Shop B', text)
+                            self.assertIn(f'Product record #{second}', text)
+                        else:
+                            self.assertNotIn('Brand B', text)
+                        windows[0].destroy()
+                        app.update()
+                    with patch.object(app, 'show_flag_products') as popup:
+                        click(tree, 'water', 'flag')
+                        click(tree, 'menthol', 'ingredient')
+                        popup.assert_not_called()
+                # Resolve against current data after a formula edit.
+                store.save_product('Same shampoo', 'Brand A', 'Water, Glycerin',
+                                   ['water', 'glycerin'], product_id=first)
+                app.refresh()
+                app.compare_tab.tkraise()
+                click(app.compare_tree, 'menthol', 'flag')
+                window = next(w for w in app.winfo_children() if isinstance(w, ctk.CTkToplevel))
+                self.assertIn('1 saved bottles / formulas', label_texts(window))
+                self.assertNotIn(f'Product record #{first}', label_texts(window))
+                window.destroy()
+                self.assertEqual(errors, [], errors)
+            finally:
+                for callback in app.tk.call('after', 'info'):
+                    app.after_cancel(callback)
+                app.quit_app()
+
     def test_startup_navigation_forms_and_tables(self):
         import customtkinter as ctk
         from app import App

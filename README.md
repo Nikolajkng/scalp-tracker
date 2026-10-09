@@ -100,6 +100,13 @@ Tags update automatically after product edits and are shown in the
 Ingredient Patterns **Your flag** column. Tags are personal preferences,
 not health or safety ratings, and do not alter observation grouping or scores.
 
+Click a **Negative** or **Positive** cell in the **Your flag** column of
+Ingredient Patterns or Ingredient Categories to open a scrollable list of
+matching saved bottles/formulas. The list shows each product's name, brand,
+purchase location and record ID, including products without diary observations.
+Unflagged cells do not open a list. These are saved formula records, not
+separately identified physical bottles.
+
 | Ingredient Patterns column | Measurement |
 |---|---|
 | Ingredient | Normalized reviewed ingredient name |

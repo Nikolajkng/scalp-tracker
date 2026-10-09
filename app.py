@@ -164,8 +164,52 @@ class App(ctk.CTk):
         tree.configure(xscrollcommand=on_horizontal_scroll)
         tree.bind('<Configure>', lambda event: self.resize_table_columns(tree))
         tree.bind('<ButtonRelease-1>', lambda event: self.position_separators(tree, columns, lines), add='+')
+        if 'flag' in columns:
+            tree.bind('<ButtonRelease-1>', self.open_flag_cell, add='+')
         self.tables.append(tree)
         return tree
+
+    def open_flag_cell(self, event):
+        tree = event.widget
+        if tree.identify_region(event.x, event.y) != 'cell':
+            return
+        item = tree.identify_row(event.y)
+        column = tree.identify_column(event.x)
+        if not item or tree.column(column, 'id') != 'flag':
+            return
+        if tree.set(item, 'flag') not in ('Negative', 'Positive'):
+            return
+        tree.selection_set(item)
+        tree.focus(item)
+        self.show_flag_products(tree.set(item, 'ingredient'))
+        return 'break'
+
+    def show_flag_products(self, ingredient):
+        products = [p for p in self.store.products()
+                    if ingredient in self.store.ingredients(p['id'])]
+        window, frame = self.dialog('Bottles containing this ingredient')
+        ctk.CTkLabel(frame, text=f'{ingredient_flag(ingredient)} ingredient: {ingredient}',
+                    font=ctk.CTkFont(size=18, weight='bold'),
+                    wraplength=620, justify='left').grid(
+                        row=0, column=0, columnspan=2, sticky='w', padx=8, pady=8)
+        ctk.CTkLabel(frame,
+            text=f'{len(products)} saved bottles / formulas contain this ingredient.',
+            wraplength=620, justify='left').grid(
+                row=1, column=0, columnspan=2, sticky='w', padx=8, pady=(0, 12))
+        for index, product in enumerate(products):
+            card = ctk.CTkFrame(frame)
+            card.grid(row=index + 2, column=0, columnspan=2, sticky='ew', padx=8, pady=5)
+            ctk.CTkLabel(card, text=product['name'], wraplength=620, justify='left',
+                        font=ctk.CTkFont(size=16, weight='bold')).pack(
+                            anchor='w', padx=12, pady=(10, 4))
+            ctk.CTkLabel(card,
+                text=f"Brand: {product['brand'] or 'Not recorded'}\n"
+                     f"Bought at: {product['location'] or 'Not recorded'}\n"
+                     f"Product record #{product['id']}",
+                wraplength=620, justify='left').pack(anchor='w', padx=12, pady=(0, 10))
+        ctk.CTkButton(frame, text='Close', command=window.destroy).grid(
+            row=len(products) + 2, column=1, sticky='e', padx=8, pady=12)
+        return window
 
     def sort_table(self, tree, column, descending=None):
         if descending is None:
@@ -415,7 +459,7 @@ class App(ctk.CTk):
             ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Not assessed', 'Reaction Percentage'),
             (270, 100, 140, 95, 95, 130, 170))
         self.compare_tree.bind('<<TreeviewSelect>>', self.ingredient_detail)
-        self.detail = tk.StringVar(value='Select an ingredient to see which products contain it.')
+        self.detail = tk.StringVar(value='Select an ingredient for details. Click a Positive or Negative flag to see matching bottles / formulas.')
         ctk.CTkLabel(self.compare_tab, textvariable=self.detail, wraplength=900).pack(anchor='w', pady=10)
 
     def show_comparison_info(self):
@@ -454,7 +498,8 @@ class App(ctk.CTk):
         selected = self.category.get()
         self.category_description.set(CATEGORY_DESCRIPTIONS.get(selected,
             'Group ingredients by common roles. One ingredient can appear in several categories; '
-            'unrecognized labels remain unclassified. Categories are not safety ratings.'))
+            'unrecognized labels remain unclassified. Categories are not safety ratings.')
+            + ' Click a Positive or Negative flag to see matching bottles / formulas.')
         self.category_tree.delete(*self.category_tree.get_children())
         _, rows = self.store.comparisons()
         for row in rows:
@@ -486,7 +531,7 @@ class App(ctk.CTk):
         self.summary.set(f"Products: {totals['reaction']} reaction · {totals['tolerated']} tolerated · "
                          f"{totals['mixed']} mixed (excluded) · {totals['unknown']} not assessed. {suffix}")
         self.restore_table_sort(self.compare_tree)
-        self.detail.set('Select an ingredient to see which products contain it.')
+        self.detail.set('Select an ingredient for details. Click a Positive or Negative flag to see matching bottles / formulas.')
 
     def ingredient_detail(self, event=None):
         selected = self.compare_tree.selection()
