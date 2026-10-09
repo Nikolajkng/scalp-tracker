@@ -120,30 +120,31 @@ same URL again creates a new record after review; it does not merge histories.
 ## How the comparison works
 
 The Products table shows the brand, product/formula name, number of distinct
-reviewed ingredients, negative and positive ingredient counts, and purchase
+reviewed ingredients, Reacted and Neutral ingredient counts, and purchase
 location. A count such as **2 / 23** means two tagged ingredients among 23 reviewed
 ingredients. These counts describe presence, not concentration or ingredient
 percentages in the shampoo.
 
 **Recommendation (0–100)** is a personal preference indicator:
 
-`50 + 50 × (positive count − negative count) / total ingredients`
+`50 + 50 × (Neutral-tagged count − Reacted-tagged count) / total ingredients`
 
-50 is neutral (no tags or balanced tags). More positive ingredients raise the
-score; more negative ingredients lower it. For example, 3 positives and
-1 negative out of 20 ingredients gives 55. All-positive lists score 100;
-all-negative lists score 0. Counts use distinct reviewed ingredients,
+50 is the midpoint (no tags or balanced tags). Neutral tags, the original
+preferred ingredient list, raise the score; Reacted tags lower it. For example,
+3 Neutral-tagged and 1 Reacted-tagged out of 20 ingredients gives 55.
+Lists containing only Neutral tags score 100; only Reacted tags score 0.
+Counts use distinct reviewed ingredients,
 and the score updates after formula edits and imports.
 Click the **i** button in Products for the explanation. This is not a medical
 safety measurement, probability or proof that a shampoo is suitable; it does
 not account for concentrations, interactions or diary reactions.
 
-The user-selected **Negative** tags match menthol, peppermint oil, cornmint oil,
+The user-selected **Reacted** tags match menthol, peppermint oil, cornmint oil,
 tea tree oil (including common botanical INCI oil names), and ingredient names
 ending in sulfate/sulphate (singular or plural). This broad sulfate rule includes
 mineral sulfates such as magnesium sulfate, not only sulfate surfactants.
 Sulfonates and sulfoacetates are not matched by that rule.
-The **Positive** tags match glycerin/glycerine/glycerol, colloidal oatmeal,
+The **Neutral** tags match glycerin/glycerine/glycerol, colloidal oatmeal,
 ceramide labels (such as Ceramide NP, AP, EOP or 3), and zinc pyrithione/pyrithione
 zinc. Ordinary oat extracts are not assumed to be colloidal oatmeal.
 Matching ignores case and recognizes parenthesized common names in botanical
@@ -151,9 +152,10 @@ labels. It does not translate Korean or other ingredient names automatically.
 Only the reviewed ingredient list is used; duplicates are counted once.
 Tags update automatically after product edits and are shown in the
 Ingredient Patterns **Your flag** column. Tags are personal preferences,
-not health or safety ratings, and do not alter observation grouping or scores.
+not automatic diary assessments or health or safety ratings. Renaming the tags
+does not change their recommendation weights, diary grouping or Reaction Percentage.
 
-Click a **Negative** or **Positive** cell in the **Your flag** column of
+Click a **Reacted** or **Neutral** cell in the **Your flag** column of
 Ingredient Patterns or Ingredient Categories to open a scrollable list of
 matching saved bottles/formulas. The list shows each product's name, brand,
 purchase location and record ID, including products without diary observations.
@@ -163,20 +165,22 @@ separately identified physical bottles.
 | Ingredient Patterns column | Measurement |
 |---|---|
 | Ingredient | Normalized reviewed ingredient name |
-| Your flag | Negative, Positive, or a dash for no matching personal tag |
+| Your flag | Reacted, Neutral, or a dash for no matching personal tag |
 | Bottles / formulas | Total saved product records containing this ingredient; one per record, including unassessed products |
 | Reaction | Products containing the ingredient in the reaction group / all products in that group |
 | Tolerated | Products containing the ingredient in the tolerated group / all products in that group |
-| Tolerated & reacted | Products containing the ingredient with both tolerated and reaction observations; each formula counts once |
+| Tolerated & reacted | If the ingredient appears in both reaction and tolerated histories, the number of distinct assessed formulas containing it across those histories; otherwise 0. Different shampoos can supply the two outcomes. Unassessed formulas are excluded |
 | Not assessed | Products containing the ingredient without qualifying assessed observations, including reactions only to another selected symptom |
 | Reaction Percentage | Reaction-group percentage minus tolerated-group percentage, in percentage points |
 
 **Reaction Percentage** is a renamed comparison column; the calculation is
 unchanged. It is not the likelihood that an ingredient causes a reaction.
 Click the **i** button beside the symptom selector to see the calculation,
-an example, marker thresholds and group definitions. Products with both outcomes
-appear in **Tolerated & reacted** and remain excluded from both comparison
-percentages. The summary also shows their total across all formulas.
+an example, marker thresholds and group definitions. For example, an ingredient
+in 2 reaction formulas and 2 tolerated formulas shows **4** in **Tolerated & reacted**,
+even when none of those shampoos individually has both outcomes. A formula with
+both outcomes counts once in this column and remains excluded from both comparison
+percentages. The summary shows the total formulas whose own histories have both outcomes.
 
 Click any table header once for ascending order and again for descending order.
 Text sorts alphabetically without case sensitivity; ISO dates sort

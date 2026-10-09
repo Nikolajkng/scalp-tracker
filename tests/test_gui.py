@@ -141,8 +141,8 @@ class GuiTests(unittest.TestCase):
                     page.tkraise()
                     app.sort_table(tree, 'ingredient', True)
                     app.update()
-                    for ingredient, flag, count in (('menthol', 'Negative', 2),
-                                                    ('glycerin', 'Positive', 1)):
+                    for ingredient, flag, count in (('menthol', 'Reacted', 2),
+                                                    ('glycerin', 'Neutral', 1)):
                         click(tree, ingredient, 'flag')
                         windows = [w for w in app.winfo_children() if isinstance(w, ctk.CTkToplevel)]
                         self.assertEqual(len(windows), 1)
@@ -153,7 +153,7 @@ class GuiTests(unittest.TestCase):
                         self.assertIn('Shop A', text)
                         self.assertIn(f'Product record #{first}', text)
                         self.assertNotIn('Unflagged shampoo', text)
-                        if flag == 'Negative':
+                        if flag == 'Reacted':
                             self.assertIn('Brand B', text)
                             self.assertIn('Shop B', text)
                             self.assertIn(f'Product record #{second}', text)
@@ -195,9 +195,11 @@ class GuiTests(unittest.TestCase):
                 app.update()
                 self.assertEqual(len(app.tables), 4)
                 self.assertIn('Ingredient Categories', app.pages)
-                self.assertEqual(app.compare_tree.heading('mixed', 'text'), 'Tolerated & reacted')
+                self.assertEqual(app.compare_tree.heading('both_outcomes', 'text'), 'Tolerated & reacted')
                 self.assertEqual(app.compare_tree.heading('unknown', 'text'), 'Not assessed')
                 self.assertEqual(app.compare_tree.heading('difference', 'text'), 'Reaction Percentage')
+                self.assertEqual(app.product_tree.heading('negative', 'text'), 'Reacted ingredients')
+                self.assertEqual(app.product_tree.heading('positive', 'text'), 'Neutral ingredients')
                 with patch('app.messagebox.showinfo') as info:
                     app.update()
                     info.assert_not_called()
@@ -259,7 +261,7 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '75.0')
                 flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
                          for row in app.compare_tree.get_children()}
-                self.assertEqual(flags, {'water': '—', 'glycerin': 'Positive'})
+                self.assertEqual(flags, {'water': '—', 'glycerin': 'Neutral'})
                 app.category.set('Moisture support')
                 app.refresh_categories()
                 self.assertEqual([app.category_tree.set(row, 'ingredient')
@@ -276,7 +278,7 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual(app.product_tree.set(str(pid), 'recommendation'), '50.0')
                 flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
                          for row in app.compare_tree.get_children()}
-                self.assertEqual(flags['menthol'], 'Negative')
+                self.assertEqual(flags['menthol'], 'Reacted')
                 # Short contents should fill the viewport, including after resize.
                 store.save_product('Short', 'Test', 'Water, Glycerin',
                                    ['water', 'glycerin'], product_id=pid)
@@ -299,12 +301,23 @@ class GuiTests(unittest.TestCase):
                                          .measure('Product / formula') + 28))
                 self.assertTrue(app.footer.winfo_ismapped())
                 self.assertLessEqual(app.footer.winfo_y() + app.footer.winfo_height(), app.winfo_height())
+                # Shared ingredients also count across different shampoos' histories.
+                tolerated_pid = store.save_product('Tolerated shampoo', 'Test', 'Water, Glycerin',
+                                                   ['water', 'glycerin'])
+                store.save_entry(tolerated_pid, '2026-10-01', '2026-10-02',
+                                 'Tolerated', 0, 0, 0, 'Original bottle')
+                app.refresh()
+                for row in app.compare_tree.get_children():
+                    self.assertEqual(app.compare_tree.set(row, 'both_outcomes'), '2')
+                    self.assertEqual(app.compare_tree.set(row, 'reaction'), '1 / 1')
+                    self.assertEqual(app.compare_tree.set(row, 'tolerated'), '1 / 1')
+                store.delete('product', tolerated_pid)
                 # Mixed histories count once per formula, not once per observation.
                 for _ in range(2):
                     store.save_entry(pid, '2026-10-01', '2026-10-02', 'Tolerated', 0, 0, 0, 'Original bottle')
                 app.refresh()
                 for row in app.compare_tree.get_children():
-                    self.assertEqual(app.compare_tree.set(row, 'mixed'), '1')
+                    self.assertEqual(app.compare_tree.set(row, 'both_outcomes'), '1')
                     self.assertEqual(app.compare_tree.set(row, 'reaction'), '0 / 0')
                     self.assertEqual(app.compare_tree.set(row, 'tolerated'), '0 / 0')
                     self.assertEqual(app.compare_tree.set(row, 'difference'), '—')

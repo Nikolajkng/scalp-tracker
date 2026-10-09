@@ -66,10 +66,10 @@ class TrackerTests(unittest.TestCase):
         ]
         for name in negative:
             with self.subTest(name=name):
-                self.assertEqual(ingredient_flag(name), 'Negative')
+                self.assertEqual(ingredient_flag(name), 'Reacted')
         for name in positive:
             with self.subTest(name=name):
-                self.assertEqual(ingredient_flag(name), 'Positive')
+                self.assertEqual(ingredient_flag(name), 'Neutral')
         for name in neutral:
             with self.subTest(name=name):
                 self.assertEqual(ingredient_flag(name), '')
@@ -89,11 +89,44 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(rows[0]['reaction'], 1)
         self.assertEqual(rows[0]['difference'], 0)
         self.assertEqual(rows[0]['bottles'], 4)
+        self.assertTrue(all(row['both_outcomes'] == 3 for row in rows))
         # Repeated diary entries and symptom filters must not inflate bottle counts.
         self.assertTrue(all(row['bottles'] == 4 for row in self.store.comparisons('Bumps')[1]))
+        self.assertTrue(all(row['both_outcomes'] == 0 for row in self.store.comparisons('Bumps')[1]))
         self.store.delete('product', b)
         self.assertTrue(all(r['difference'] is None for r in self.store.comparisons()[1]))
         self.assertTrue(all(r['bottles'] == 3 for r in self.store.comparisons()[1]))
+        self.assertTrue(all(r['both_outcomes'] == 2 for r in self.store.comparisons()[1]))
+
+    def test_shared_ingredient_across_reacted_and_tolerated_formulas(self):
+        raw = 'Cocamidopropyl Betaine, Sodium Laureth Sulfate'
+        reaction = [self.product(f'Reaction {i}', raw) for i in range(2)]
+        reaction.append(self.product('Other reaction', 'Water'))
+        tolerated = [self.product(f'Tolerated {i}', raw) for i in range(2)]
+        for pid in reaction:
+            self.entry(pid)
+        for pid in tolerated:
+            self.entry(pid, 'Tolerated', 0)
+        # Repeated observations must not inflate ingredient evidence.
+        self.entry(reaction[0])
+        totals, rows = self.store.comparisons()
+        self.assertEqual(totals, dict(reaction=3, tolerated=2, mixed=0, unknown=0))
+        for row in rows:
+            if row['name'] == 'water':
+                self.assertEqual(row['both_outcomes'], 0)
+                continue
+            self.assertEqual((row['reaction'], row['tolerated'], row['mixed']), (2, 2, 0))
+            self.assertEqual(row['both_outcomes'], 4)
+            self.assertEqual(row['bottles'], 4)
+            self.assertAlmostEqual(row['difference'], -1 / 3)
+        # Unassessed formulas count as bottles, but add no reaction/tolerance evidence.
+        self.product('Unassessed', raw)
+        for row in self.store.comparisons()[1]:
+            if row['name'] != 'water':
+                self.assertEqual(row['bottles'], 5)
+                self.assertEqual(row['both_outcomes'], 4)
+        self.assertTrue(all(row['both_outcomes'] == 0
+                            for row in self.store.comparisons('Bumps')[1]))
 
     def test_categories_support_multiple_roles_and_leave_unknown_labels_unclassified(self):
         samples = {

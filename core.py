@@ -103,17 +103,17 @@ def ingredient_flag(name):
     base = ' '.join(re.sub(r'\([^)]*\)', '', name).split())
     if (name in NEGATIVE_INGREDIENTS or base in NEGATIVE_INGREDIENTS
             or re.search(r'\b(?:sulfates?|sulphates?)$', base)):
-        return 'Negative'
+        return 'Reacted'
     if (name in POSITIVE_INGREDIENTS or base in POSITIVE_INGREDIENTS
             or re.fullmatch(r'ceramides?(?: [a-z0-9]+(?:-[a-z0-9]+)*)?', base)):
-        return 'Positive'
+        return 'Neutral'
     return ''
 
 
 def ingredient_flag_counts(names):
     """Count each reviewed, normalized ingredient once."""
     flags = [ingredient_flag(name) for name in normalize_lines(names)]
-    return {'negative': flags.count('Negative'), 'positive': flags.count('Positive'),
+    return {'negative': flags.count('Reacted'), 'positive': flags.count('Neutral'),
             'total': len(flags)}
 
 
@@ -245,18 +245,24 @@ class Store:
             self.db.execute(f'DELETE FROM {table} WHERE id=?', (record_id,))
 
     def comparisons(self, symptom='Any reaction'):
-        """Each formula counts once. Mixed outcomes stay in their own column.
+        """Count distinct formulas and shared ingredient evidence across outcomes.
 
         Symptom comparisons only count user-labeled Reaction entries with the
         selected symptom. Tolerated is always explicit, never inferred from 0.
+        Formulas with their own mixed history stay outside the percentage groups.
         """
         groups = {}
+        reaction_products, tolerated_products = set(), set()
         symptom_column = {'Flakes': 'flakes', 'Itch': 'itch', 'Bumps': 'bumps'}.get(symptom)
         for p in self.products():
             entries = self.db.execute('SELECT * FROM diary WHERE product_id=?', (p['id'],)).fetchall()
             reaction = any(e['outcome'] == 'Reaction' and
                            (symptom_column is None or e[symptom_column] > 0) for e in entries)
             tolerated = any(e['outcome'] == 'Tolerated' for e in entries)
+            if reaction:
+                reaction_products.add(p['id'])
+            if tolerated:
+                tolerated_products.add(p['id'])
             # Other reactions prevent being classified as exclusively tolerated.
             other_reaction = any(e['outcome'] == 'Reaction' for e in entries)
             if tolerated and other_reaction:
@@ -270,14 +276,24 @@ class Store:
             groups[p['id']] = group
         totals = {g: list(groups.values()).count(g) for g in ('reaction', 'tolerated', 'mixed', 'unknown')}
         counts = {}
+        presence = {}
         for r in self.db.execute('SELECT * FROM ingredients'):
             item = counts.setdefault(r['name'], dict.fromkeys(totals, 0))
             item[groups[r['product_id']]] += 1
+            presence.setdefault(r['name'], set()).add(r['product_id'])
         rows = []
         for name, c in counts.items():
             difference = (c['reaction']/totals['reaction'] - c['tolerated']/totals['tolerated']
                           if totals['reaction'] and totals['tolerated'] else None)
-            rows.append({'name': name, **c, 'bottles': sum(c.values()), 'difference': difference})
+            # Shared evidence belongs to the ingredient, even if reaction and
+            # tolerance were recorded for different formulas. Count each
+            # assessed formula once; unknown formulas contribute no evidence.
+            reaction_evidence = presence[name] & reaction_products
+            tolerated_evidence = presence[name] & tolerated_products
+            both_outcomes = (len(reaction_evidence | tolerated_evidence)
+                             if reaction_evidence and tolerated_evidence else 0)
+            rows.append({'name': name, **c, 'bottles': sum(c.values()),
+                         'both_outcomes': both_outcomes, 'difference': difference})
         rows.sort(key=lambda r: (-(r['difference'] if r['difference'] is not None else -2),
                                  -r['reaction'], r['name']))
         return totals, rows
