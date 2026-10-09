@@ -16,8 +16,10 @@ from tkinter import ttk, messagebox, filedialog
 
 from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
                   ingredient_categories, ingredient_recommendation_score,
-                  CATEGORY_DESCRIPTIONS, OUTCOMES, CONTAINERS)
+                  CATEGORY_DESCRIPTIONS, OUTCOMES)
 from product_import import fetch_product, validate_url, ImportError as ProductImportError
+
+CONTAINER_LABELS = {'Original bottle': 'Bottle', 'Decanted bottle': 'Decanted bottle', 'Unknown': 'Unknown'}
 
 
 def text_value(widget):
@@ -27,14 +29,18 @@ def text_value(widget):
 class App(ctk.CTk):
     def __init__(self, store):
         ctk.set_appearance_mode('dark')
-        ctk.set_default_color_theme('blue')
+        ctk.set_default_color_theme(str(Path(__file__).with_name('theme.json')))
         super().__init__()
         self.store = store
         self.tables = []
         self.table_sorts = {}
         self.title('Scalp Tracker')
-        self.geometry('1180x840')
-        self.minsize(980, 720)
+        width = min(1500, self.winfo_screenwidth() - 80)
+        height = min(1000, self.winfo_screenheight() - 100)
+        self.geometry(f'{width}x{height}')
+        self.minsize(min(980, width), min(720, height))
+        self.table_body_font = tkfont.Font(family=ctk.CTkFont().cget('family'), size=12)
+        self.table_heading_font = tkfont.Font(family=ctk.CTkFont().cget('family'), size=11, weight='bold')
         self.configure(fg_color=('#eef3f0', '#101916'))
         self.style = ttk.Style(self)
         self.style.theme_use('clam')
@@ -47,7 +53,7 @@ class App(ctk.CTk):
         title_row.pack(fill='x')
         ctk.CTkLabel(title_row, text='A little clarity, one wash at a time.',
                      font=ctk.CTkFont(size=28, weight='bold')).pack(side='left')
-        ctk.CTkOptionMenu(title_row, values=['Dark', 'Light'], width=110,
+        self.option_menu(title_row, values=['Dark', 'Light'], width=110,
                           command=self.change_theme).pack(side='right')
         ctk.CTkLabel(header, text='Keep your formulas and observations together. Explore patterns at your own pace.',
                      text_color=('#597067', '#a6b8af')).pack(anchor='w', pady=(4, 0))
@@ -57,11 +63,11 @@ class App(ctk.CTk):
         tab_names = ('Products', 'Reaction Diary', 'Ingredients Patterns', 'Ingredient Categories')
         navigation = ctk.CTkSegmentedButton(
             self, values=list(tab_names), height=76,
-            font=ctk.CTkFont(size=17, weight='bold'), corner_radius=12,
+            font=ctk.CTkFont(size=18, weight='bold'), corner_radius=18,
             selected_color='#2563eb', selected_hover_color='#1d4ed8',
             command=self.show_tab)
         navigation.pack(fill='x', padx=28, pady=(8, 8))
-        book = ctk.CTkFrame(self, corner_radius=16, fg_color=('#ffffff', '#1b2822'))
+        book = ctk.CTkFrame(self, corner_radius=24, fg_color=('#ffffff', '#1b2822'))
         book.grid_rowconfigure(0, weight=1)
         book.grid_columnconfigure(0, weight=1)
         self.pages = {}
@@ -76,7 +82,7 @@ class App(ctk.CTk):
         stats = ctk.CTkFrame(self, fg_color='transparent')
         for i, (label, var) in enumerate(zip(['PRODUCTS SAVED', 'OBSERVATIONS', 'INGREDIENTS TRACKED'], self.stat_vars)):
             stats.columnconfigure(i, weight=1)
-            card = ctk.CTkFrame(stats, corner_radius=14, fg_color=('#ffffff', '#1b2822'))
+            card = ctk.CTkFrame(stats, corner_radius=20, fg_color=('#ffffff', '#1b2822'))
             card.grid(row=0, column=i, sticky='ew', padx=(0 if i == 0 else 8, 0))
             ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=11, weight='bold'),
                          text_color=('#597067', '#a6b8af')).pack(anchor='w', padx=18, pady=(12, 0))
@@ -88,9 +94,9 @@ class App(ctk.CTk):
         footer = ctk.CTkFrame(self, fg_color='transparent')
         footer.pack(side='bottom', fill='x', padx=28, pady=(4, 20))
         self.footer = footer
-        ctk.CTkButton(footer, text='Export CSV', width=115, command=self.export,
+        self.button(footer, text='Export CSV', width=115, command=self.export,
                       fg_color='#2563eb', hover_color='#1d4ed8').pack(side='right')
-        ctk.CTkButton(footer, text='Back up database', width=150, command=self.backup,
+        self.button(footer, text='Back up database', width=150, command=self.backup,
                       fg_color='#2563eb', hover_color='#1d4ed8').pack(side='right', padx=8)
         self.status = tk.StringVar(value='Saved on this computer · Patterns, not a diagnosis')
         ctk.CTkLabel(footer, textvariable=self.status, wraplength=560, justify='left',
@@ -105,6 +111,17 @@ class App(ctk.CTk):
     def show_tab(self, name):
         self.pages[name].tkraise()
 
+    def button(self, parent, **kwargs):
+        options = dict(height=42, corner_radius=14, font=ctk.CTkFont(size=16, weight='bold'))
+        options.update(kwargs)
+        return ctk.CTkButton(parent, **options)
+
+    def option_menu(self, parent, **kwargs):
+        options = dict(height=46, corner_radius=12, font=ctk.CTkFont(size=16),
+                       dropdown_font=ctk.CTkFont(size=20))
+        options.update(kwargs)
+        return ctk.CTkOptionMenu(parent, **options)
+
     def change_theme(self, mode):
         ctk.set_appearance_mode(mode)
         dark = mode == 'Dark'
@@ -113,9 +130,9 @@ class App(ctk.CTk):
         stripe = '#203027' if dark else '#f3f7f4'
         separator = '#ffffff'
         self.style.configure('Treeview', background=bg, fieldbackground=bg, foreground=fg,
-                             borderwidth=0, rowheight=38, font=('sans-serif', 11))
+                             borderwidth=0, rowheight=44, font=self.table_body_font)
         self.style.configure('Treeview.Heading', background=heading, foreground=fg,
-                             relief='flat', font=('sans-serif', 10, 'bold'), padding=(10, 12))
+                             relief='flat', font=self.table_heading_font, padding=(12, 14))
         self.style.map('Treeview', background=[('selected', '#2563eb')], foreground=[('selected', '#ffffff')])
         self.style.map('Treeview.Heading', background=[('active', heading)])
         for tree in self.tables:
@@ -211,7 +228,7 @@ class App(ctk.CTk):
                      f"Bought at: {product['location'] or 'Not recorded'}\n"
                      f"Product record #{product['id']}",
                 wraplength=620, justify='left').pack(anchor='w', padx=12, pady=(0, 10))
-        ctk.CTkButton(frame, text='Close', command=window.destroy).grid(
+        self.button(frame, text='Close', command=window.destroy).grid(
             row=len(products) + 2, column=1, sticky='e', padx=8, pady=12)
         return window
 
@@ -265,8 +282,8 @@ class App(ctk.CTk):
         for table, frame, columns, labels, lines in getattr(self, 'table_specs', []):
             if table is not tree:
                 continue
-            body_font = tkfont.Font(family='sans-serif', size=11)
-            heading_font = tkfont.Font(family='sans-serif', size=10, weight='bold')
+            body_font = self.table_body_font
+            heading_font = self.table_heading_font
             widths = []
             for column, label in zip(columns, labels):
                 widest = heading_font.measure(tree.heading(column, 'text'))
@@ -288,8 +305,8 @@ class App(ctk.CTk):
         top.pack(fill='x', pady=(0, 10))
         ctk.CTkLabel(top, text='Add the exact formula from your label. Use a new product entry if the formula changes.',
                   wraplength=850).pack(side='left')
-        self.recommendation_info_button = ctk.CTkButton(
-            top, text='ⓘ', width=36, command=self.show_recommendation_info)
+        self.recommendation_info_button = self.button(
+            top, text='i', width=36, font=ctk.CTkFont(size=20, weight='bold'), corner_radius=18, command=self.show_recommendation_info)
         self.recommendation_info_button.pack(side='right')
         self.product_tree = self.table(self.product_tab,
             ('brand', 'name', 'n', 'negative', 'positive', 'recommendation', 'location'),
@@ -300,7 +317,7 @@ class App(ctk.CTk):
         for text, command in [('Add product', lambda: self.product_dialog()),
                               ('Import from link', self.import_dialog),
                               ('Edit selected', self.edit_product), ('Delete selected', self.delete_product)]:
-            ctk.CTkButton(buttons, text=text, command=command,
+            self.button(buttons, text=text, command=command,
                           fg_color='#2563eb', hover_color='#1d4ed8').pack(side='left', padx=(0, 8))
         self.product_tree.bind('<Double-1>', lambda e: self.edit_product())
         self.product_empty = ctk.CTkLabel(self.product_tab, text='', text_color=('#597067', '#a6b8af'))
@@ -343,34 +360,35 @@ class App(ctk.CTk):
     def dialog(self, title):
         window = ctk.CTkToplevel(self)
         window.title(title)
-        height = min(900, max(400, self.winfo_screenheight() - 100))
-        window.geometry(f'820x{height}')
-        window.minsize(720, min(500, height))
+        width = min(1100, self.winfo_screenwidth() - 100)
+        height = min(980, self.winfo_screenheight() - 100)
+        window.geometry(f'{width}x{height}')
+        window.minsize(min(860, width), min(600, height))
         window.transient(self)
-        ctk.CTkLabel(window, text=title, font=ctk.CTkFont(size=24, weight='bold')).pack(
-            anchor='w', padx=24, pady=(20, 8))
-        frame = ctk.CTkScrollableFrame(window, corner_radius=12)
-        frame.pack(fill='both', expand=True, padx=20, pady=(0, 20))
+        ctk.CTkLabel(window, text=title, font=ctk.CTkFont(size=28, weight='bold')).pack(
+            anchor='w', padx=28, pady=(24, 16))
+        frame = ctk.CTkScrollableFrame(window, corner_radius=20)
+        frame.pack(fill='both', expand=True, padx=24, pady=(0, 24))
         frame.columnconfigure(1, weight=1)
         window.wait_visibility()
         window.grab_set()
         return window, frame
 
     def field(self, frame, row, label, value='', options=None):
-        ctk.CTkLabel(frame, text=label, justify='left').grid(row=row, column=0, sticky='w', padx=(8, 18), pady=7)
+        ctk.CTkLabel(frame, text=label, justify='left').grid(row=row, column=0, sticky='w', padx=(16, 24), pady=10)
         var = tk.StringVar(value=value)
-        widget = (ctk.CTkOptionMenu(frame, variable=var, values=list(options), width=380, dynamic_resizing=False)
-                  if options is not None else ctk.CTkEntry(frame, textvariable=var, width=380, height=36))
-        widget.grid(row=row, column=1, sticky='ew', padx=(0, 8), pady=7)
+        widget = (self.option_menu(frame, variable=var, values=list(options), width=480, dynamic_resizing=False)
+                  if options is not None else ctk.CTkEntry(frame, textvariable=var, width=480, height=46))
+        widget.grid(row=row, column=1, sticky='ew', padx=(0, 16), pady=10)
         if isinstance(widget, ctk.CTkEntry):
             widget.bind('<Control-a>', lambda event: (widget.select_range(0, 'end'), 'break')[-1])
         return var
 
     def textbox(self, frame, row, label, value='', height=4):
-        ctk.CTkLabel(frame, text=label, justify='left').grid(row=row, column=0, sticky='nw', pady=7, padx=(8, 18))
-        box = ctk.CTkTextbox(frame, width=400, height=height * 22 + 12, wrap='word', undo=True,
-                             border_width=1, corner_radius=8)
-        box.grid(row=row, column=1, sticky='nsew', pady=7, padx=(0, 8))
+        ctk.CTkLabel(frame, text=label, justify='left').grid(row=row, column=0, sticky='nw', pady=10, padx=(16, 24))
+        box = ctk.CTkTextbox(frame, width=480, height=height * 26 + 16, wrap='word', undo=True,
+                             border_width=1, corner_radius=14)
+        box.grid(row=row, column=1, sticky='nsew', pady=10, padx=(0, 16))
         box.insert('1.0', value)
         box.bind('<Control-a>', lambda event: (box.tag_add('sel', '1.0', 'end-1c'), 'break')[-1])
         return box
@@ -417,7 +435,7 @@ class App(ctk.CTk):
             threading.Thread(target=worker, daemon=True).start()
             self.after(100, poll)
 
-        button = ctk.CTkButton(frame, text='Read product page', command=fetch)
+        button = self.button(frame, text='Read product page', command=fetch)
         button.grid(row=2, column=1, sticky='e', pady=12)
         return window
 
@@ -440,7 +458,7 @@ class App(ctk.CTk):
         def preview():
             reviewed.delete('1.0', 'end')
             reviewed.insert('1.0', '\n'.join(parse_ingredients(text_value(raw))))
-        ctk.CTkButton(frame, text='Parse list → review names below', command=preview,
+        self.button(frame, text='Parse list → review names below', command=preview,
                       fg_color='#2563eb', hover_color='#1d4ed8').grid(row=5, column=1, sticky='w')
         ctk.CTkLabel(frame, text='\n'.join(prefill.warnings) if prefill else
                     'Check the preview before saving. English aliases are limited; Korean names remain unchanged.',
@@ -461,7 +479,7 @@ class App(ctk.CTk):
                                     source_url=source.get())
             window.destroy()
             self.refresh()
-        ctk.CTkButton(frame, text='Save product', command=lambda: self.guard(save),
+        self.button(frame, text='Save product', command=lambda: self.guard(save),
                       fg_color='#2563eb', hover_color='#1d4ed8').grid(row=9, column=1, sticky='e', pady=8)
         return window
 
@@ -476,7 +494,7 @@ class App(ctk.CTk):
         buttons.pack(fill='x', pady=10)
         for text, command in [('Add observation', lambda: self.entry_dialog()),
                               ('Edit selected', self.edit_entry), ('Delete selected', self.delete_entry)]:
-            ctk.CTkButton(buttons, text=text, command=command,
+            self.button(buttons, text=text, command=command,
                           fg_color='#2563eb', hover_color='#1d4ed8').pack(side='left', padx=(0, 8))
         self.diary_tree.bind('<Double-1>', lambda e: self.edit_entry())
         self.diary_empty = ctk.CTkLabel(self.diary_tab, text='', text_color=('#597067', '#a6b8af'))
@@ -508,17 +526,20 @@ class App(ctk.CTk):
         flakes = self.field(frame, 4, 'Flakes (0 none – 5 severe)', str(e.get('flakes', 0)), list(map(str, range(6))))
         itch = self.field(frame, 5, 'Itch (0 none – 5 severe)', str(e.get('itch', 0)), list(map(str, range(6))))
         bumps = self.field(frame, 6, 'Number of bumps', str(e.get('bumps', 0)))
-        container = self.field(frame, 7, 'Container', e.get('container', CONTAINERS[0]), CONTAINERS)
+        container = self.field(frame, 7, 'Container',
+            CONTAINER_LABELS[e.get('container', 'Original bottle')], tuple(CONTAINER_LABELS.values()))
         notes = self.textbox(frame, 8, 'Context / other symptoms', e.get('notes', ''), 6)
         ctk.CTkLabel(frame, text='Examples: pus, delay before symptoms, bottle cleaning, added water, other products, treatment, baseline symptoms.',
                   wraplength=460).grid(row=9, column=1, sticky='w')
 
         def save():
             self.store.save_entry(choices[product.get()], used.get(), observed.get(), outcome.get(),
-                                  flakes.get(), itch.get(), bumps.get(), container.get(), text_value(notes), e.get('id'))
+                                  flakes.get(), itch.get(), bumps.get(),
+                                  next(key for key, label in CONTAINER_LABELS.items() if label == container.get()),
+                                  text_value(notes), e.get('id'))
             window.destroy()
             self.refresh()
-        ctk.CTkButton(frame, text='Save observation', command=lambda: self.guard(save),
+        self.button(frame, text='Save observation', command=lambda: self.guard(save),
                       fg_color='#2563eb', hover_color='#1d4ed8').grid(row=10, column=1, sticky='e', pady=8)
 
     def build_comparison(self):
@@ -526,11 +547,11 @@ class App(ctk.CTk):
         top.pack(fill='x')
         ctk.CTkLabel(top, text='Compare observations for:').pack(side='left')
         self.symptom = tk.StringVar(value='Any reaction')
-        choice = ctk.CTkOptionMenu(top, variable=self.symptom, values=['Any reaction', 'Flakes', 'Itch', 'Bumps'],
+        choice = self.option_menu(top, variable=self.symptom, values=['Any reaction', 'Flakes', 'Itch', 'Bumps'],
                                    command=lambda value: self.refresh_comparison())
         choice.pack(side='left', padx=10)
-        self.comparison_info_button = ctk.CTkButton(
-            top, text='ⓘ', width=36, command=self.show_comparison_info)
+        self.comparison_info_button = self.button(
+            top, text='i', width=36, font=ctk.CTkFont(size=20, weight='bold'), corner_radius=18, command=self.show_comparison_info)
         self.comparison_info_button.pack(side='right')
         self.summary = tk.StringVar()
         ctk.CTkLabel(self.compare_tab, textvariable=self.summary, wraplength=900).pack(anchor='w', pady=10)
@@ -562,7 +583,7 @@ class App(ctk.CTk):
         top.pack(fill='x')
         ctk.CTkLabel(top, text='Ingredient category:').pack(side='left')
         self.category = tk.StringVar(value='All categories')
-        self.category_menu = ctk.CTkOptionMenu(
+        self.category_menu = self.option_menu(
             top, variable=self.category, values=['All categories', *CATEGORY_DESCRIPTIONS],
             width=240, command=lambda value: self.refresh_categories())
         self.category_menu.pack(side='left', padx=10)
@@ -645,7 +666,9 @@ class App(ctk.CTk):
                 f'{ingredient_recommendation_score(ingredients):.1f}', p['location']))
         self.diary_tree.delete(*self.diary_tree.get_children())
         for e in self.store.entries():
-            self.diary_tree.insert('', 'end', iid=e['id'], values=tuple(e[k] for k in
+            values = dict(e)
+            values['container'] = CONTAINER_LABELS[e['container']]
+            self.diary_tree.insert('', 'end', iid=e['id'], values=tuple(values[k] for k in
                 ('observed_on', 'product', 'outcome', 'flakes', 'itch', 'bumps', 'container')))
         self.refresh_comparison()
         self.refresh_categories()

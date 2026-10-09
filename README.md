@@ -58,6 +58,11 @@ keyboard selection, mouse-wheel scrolling and efficient tabular display. Text fi
 support **Ctrl+A** for selecting all text. Native file and confirmation
 dialogs follow your operating system's appearance.
 
+The main window starts up to 1500 × 1000 and adapts to the screen. Forms open
+in a larger scrollable window with bigger inputs and dropdown text. Rounded
+controls and a bundled theme use Segoe UI on Windows and Helvetica on macOS/Linux.
+Native dropdown popup borders and window decorations follow the operating system.
+
 ## First session
 
 1. In **Products**, click **Add product**. Enter the product/variant and paste the
@@ -129,7 +134,7 @@ score; more negative ingredients lower it. For example, 3 positives and
 1 negative out of 20 ingredients gives 55. All-positive lists score 100;
 all-negative lists score 0. Counts use distinct reviewed ingredients,
 and the score updates after formula edits and imports.
-Click the **ⓘ** button in Products for the explanation. This is not a medical
+Click the **i** button in Products for the explanation. This is not a medical
 safety measurement, probability or proof that a shampoo is suitable; it does
 not account for concentrations, interactions or diary reactions.
 
@@ -167,7 +172,7 @@ separately identified physical bottles.
 
 **Reaction Percentage** is a renamed comparison column; the calculation is
 unchanged. It is not the likelihood that an ingredient causes a reaction.
-Click the **ⓘ** button beside the symptom selector to see the calculation,
+Click the **i** button beside the symptom selector to see the calculation,
 an example, marker thresholds and group definitions. Mixed products are no
 longer displayed in a separate table column, but remain excluded from both
 comparison percentages and appear in the summary.
@@ -198,7 +203,7 @@ Physical bottle IDs are not recorded: buying another bottle of the same saved
 formula or adding another diary entry does not increase Bottles / formulas.
 The diary table shows observation date, product, your explicit assessment,
 flakes and itch severity (each 0 = none to 5 = severe), the number of bumps,
-and container context (Unknown, Original bottle, or Decanted bottle). Use dates
+and container context (Bottle, Decanted bottle, or Unknown). New observations default to **Bottle**. Existing container values are preserved. Use dates
 and notes are available when editing an observation.
 
 The summary cards count saved product records, diary observations, and distinct
@@ -279,6 +284,7 @@ for safer viewing. Use SQLite backups when you need the exact original data.
 
 | File | Responsibility |
 |---|---|
+| `theme.json` | Bundled colors, font defaults and rounded control styling |
 | `app.py` | CustomTkinter screens, dialogs, themes, events and input handling |
 | `requirements.txt` | Pinned GUI and web-import dependencies |
 | `product_import.py` | Product-page fetching and reviewed ingredient extraction |

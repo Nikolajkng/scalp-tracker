@@ -231,14 +231,25 @@ class GuiTests(unittest.TestCase):
                 app.update()
                 windows = [w for w in app.winfo_children() if isinstance(w, ctk.CTkToplevel)]
                 self.assertEqual(len(windows), 1)
-                windows[0].destroy()
+                def descendants(widget):
+                    for child in widget.winfo_children():
+                        yield child
+                        yield from descendants(child)
+                container = next(w for w in descendants(windows[0])
+                                 if isinstance(w, ctk.CTkOptionMenu) and int(w.grid_info()['row']) == 7)
+                self.assertEqual(app.getvar(str(container.cget('variable'))), 'Bottle')
+                next(w for w in descendants(windows[0]) if isinstance(w, ctk.CTkButton)
+                     and w.cget('text') == 'Save observation').invoke()
+                app.update()
+                self.assertEqual(store.entries()[0]['container'], 'Original bottle')
+                self.assertEqual(app.diary_tree.set(str(store.entries()[0]['id']), 'container'), 'Bottle')
                 for tree in app.tables:
                     tree.xview_moveto(1)
                     app.update()
                     tree.xview_moveto(0)
                 app.geometry('980x720')
                 app.update()
-                body_font = tkfont.Font(family='sans-serif', size=11)
+                body_font = tkfont.Font(font=app.style.lookup('Treeview', 'font'))
                 self.assertGreaterEqual(app.product_tree.column('name', 'width'),
                                         body_font.measure(app.product_tree.set(str(pid), 'name')) + 28)
                 self.assertLess(app.product_tree.xview()[1], 1)
@@ -276,13 +287,15 @@ class GuiTests(unittest.TestCase):
                     for tree in app.tables:
                         width = sum(tree.column(c, 'width') for c in tree['columns'])
                         self.assertGreaterEqual(width, tree.winfo_width() - 2)
-                    self.assertAlmostEqual(
-                        sum(app.product_tree.column(c, 'width') for c in app.product_tree['columns']),
-                        app.product_tree.winfo_width() - 2, delta=2)
+                    if sum(app.product_tree.column(c, 'minwidth') for c in app.product_tree['columns']) <= app.product_tree.winfo_width() - 2:
+                        self.assertAlmostEqual(
+                            sum(app.product_tree.column(c, 'width') for c in app.product_tree['columns']),
+                            app.product_tree.winfo_width() - 2, delta=2)
+                    else:
+                        self.assertLess(app.product_tree.xview()[1], 1)
                     self.assertEqual(app.product_tree.column('name', 'width'),
-                                     max(60, body_font.measure('Product / formula') + 28,
-                                         body_font.measure('Short') + 28,
-                                         tkfont.Font(family='sans-serif', size=10, weight='bold')
+                                     max(60, body_font.measure('Short') + 28,
+                                         tkfont.Font(font=app.style.lookup('Treeview.Heading', 'font'))
                                          .measure('Product / formula') + 28))
                 self.assertTrue(app.footer.winfo_ismapped())
                 self.assertLessEqual(app.footer.winfo_y() + app.footer.winfo_height(), app.winfo_height())
