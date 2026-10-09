@@ -132,21 +132,37 @@ def ingredient_flag_counts(names):
     """Count each reviewed, normalized ingredient once."""
     flags = [ingredient_flag(name) for name in normalize_lines(names)]
     return {'negative': flags.count('Reacted'), 'positive': flags.count('Neutral'),
+            'investigate': flags.count('Investigate'),
             'total': len(flags)}
 
 
-def product_recommendation(history):
-    """Describe explicit diary assessments; unknown outcomes supply no evidence."""
+def product_recommendation(history, ingredients):
+    """Personal screening heuristic with direct diary tolerance taking priority.
+
+    Penalize distinct screening tags rather than their fraction of the formula:
+    adding unrelated ingredients must not dilute a screening priority.
+    """
     reaction = tolerated = 0
     for entry in history:
         reaction += entry['outcome'] == 'Reaction'
         tolerated += entry['outcome'] == 'Tolerated'
     assessed = reaction + tolerated
-    score = round(100 * tolerated / assessed, 1) if assessed else None
+    counts = ingredient_flag_counts(ingredients)
+    screening_score = max(0, 100 - 20 * counts['negative'] - 10 * counts['investigate'])
+    if assessed:
+        # Ingredient screening can reduce observed tolerance by up to 25%.
+        score = round(100 * tolerated / assessed * (0.75 + screening_score / 400), 1)
+        basis = ('Mixed history' if reaction and tolerated else
+                 'Reaction history' if reaction else 'Tolerated history')
+    else:
+        # An unassessed formula must not look empirically tolerated.
+        score = round(0.6 * screening_score, 1)
+        basis = 'Ingredients only'
     # Reserve 100 for history with zero reactions, even after display rounding.
     if reaction and score is not None:
         score = min(score, 99.9)
-    return {'reaction': reaction, 'tolerated': tolerated, 'score': score}
+    return {'reaction': reaction, 'tolerated': tolerated, 'score': score,
+            'basis': basis, 'screening_score': screening_score}
 
 
 def parse_ingredients(raw):

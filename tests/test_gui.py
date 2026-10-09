@@ -41,8 +41,8 @@ class GuiTests(unittest.TestCase):
             try:
                 app.update()
                 for name, score, reaction, tolerated in [
-                    ('Untried', '—', '0', '0'), ('Unknown', '—', '0', '0'),
-                    ('Tolerated', '100.0', '0', '1'), ('Reaction', '0.0', '1', '0'),
+                    ('Untried', '60.0', '0', '0'), ('Unknown', '60.0', '0', '0'),
+                    ('Tolerated', '95.0', '0', '1'), ('Reaction', '0.0', '1', '0'),
                     ('Mixed', '75.0', '1', '3'),
                 ]:
                     pid = str(product_ids[name])
@@ -52,7 +52,9 @@ class GuiTests(unittest.TestCase):
                 app.sort_table(app.product_tree, 'recommendation', True)
                 self.assertEqual([app.product_tree.set(row, 'recommendation')
                                   for row in app.product_tree.get_children()],
-                                 ['100.0', '75.0', '0.0', '—', '—'])
+                                 ['95.0', '75.0', '60.0', '60.0', '0.0'])
+                self.assertEqual(app.product_tree.set(str(product_ids['Untried']), 'basis'), 'Ingredients only')
+                self.assertEqual(app.product_tree.set(str(product_ids['Tolerated']), 'basis'), 'Tolerated history')
                 app.symptom.set('Bumps')
                 app.refresh()
                 self.assertEqual(app.product_tree.set(str(product_ids['Mixed']), 'recommendation'), '75.0')
@@ -65,8 +67,20 @@ class GuiTests(unittest.TestCase):
                 for entry_id in [reaction_id, *tolerated_ids]:
                     store.delete('entry', entry_id)
                 app.refresh()
-                self.assertEqual(app.product_tree.set(mixed, 'recommendation'), '—')
+                self.assertEqual(app.product_tree.set(mixed, 'recommendation'), '60.0')
+                self.assertEqual(app.product_tree.set(mixed, 'basis'), 'Ingredients only')
                 self.assertEqual(app.product_tree.set(mixed, 'tolerated_entries'), '0')
+                # Formula edits recalculate primary and secondary screening penalties.
+                store.save_product('Mixed', '', 'Menthol, 로즈마리잎오일',
+                                   ['menthol', '로즈마리잎오일'], product_id=product_ids['Mixed'])
+                app.refresh()
+                self.assertEqual(app.product_tree.set(mixed, 'recommendation'), '42.0')
+                self.assertEqual(app.product_tree.set(mixed, 'negative'), '1 / 2')
+                self.assertEqual(app.product_tree.set(mixed, 'investigate'), '1 / 2')
+                entry('Mixed', 'Tolerated')
+                app.refresh()
+                self.assertEqual(app.product_tree.set(mixed, 'recommendation'), '92.5')
+                self.assertEqual(app.product_tree.set(mixed, 'basis'), 'Tolerated history')
             finally:
                 for callback in app.tk.call('after', 'info'):
                     app.after_cancel(callback)
@@ -132,7 +146,8 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual(product['source_url'], 'https://shop.example/shampoo')
                 self.assertEqual(app.store.ingredients(product['id']), ['menthol', 'water'])
                 self.assertEqual(app.product_tree.set(str(product['id']), 'negative'), '1 / 2')
-                self.assertEqual(app.product_tree.set(str(product['id']), 'recommendation'), '—')
+                self.assertEqual(app.product_tree.set(str(product['id']), 'recommendation'), '48.0')
+                self.assertEqual(app.product_tree.set(str(product['id']), 'basis'), 'Ingredients only')
                 self.assertFalse(review.winfo_exists())
                 failed = app.import_dialog()
                 failed_url = next(w for w in widgets(failed) if isinstance(w, ctk.CTkEntry))

@@ -9,9 +9,9 @@ from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_cou
 
 
 class TrackerTests(unittest.TestCase):
-    def test_recommendation_uses_explicit_diary_outcomes(self):
+    def test_recommendation_uses_explicit_diary_outcomes_and_labels_unassessed_history(self):
         samples = [
-            (0, 0, 0, None), (0, 0, 3, None), (0, 1, 0, 100.0),
+            (0, 0, 0, 60.0), (0, 0, 3, 60.0), (0, 1, 0, 100.0),
             (0, 20, 3, 100.0), (1, 0, 0, 0.0), (2, 0, 5, 0.0),
             (1, 1, 0, 50.0), (1, 3, 4, 75.0), (3, 1, 0, 25.0),
             (1, 9999, 0, 99.9),
@@ -21,8 +21,42 @@ class TrackerTests(unittest.TestCase):
                 history = ([{'outcome': 'Reaction', 'flakes': 0}] * reaction
                            + [{'outcome': 'Tolerated', 'flakes': 5}] * tolerated
                            + [{'outcome': 'Unknown / not assessed', 'flakes': 5}] * unknown)
-                self.assertEqual(product_recommendation(history),
-                                 {'reaction': reaction, 'tolerated': tolerated, 'score': score})
+                result = product_recommendation(history, ['water'])
+                self.assertEqual(result['reaction'], reaction)
+                self.assertEqual(result['tolerated'], tolerated)
+                self.assertEqual(result['score'], score)
+                self.assertEqual(result['screening_score'], 100)
+                if not reaction and not tolerated:
+                    self.assertEqual(result['basis'], 'Ingredients only')
+
+    def test_recommendation_prioritizes_personal_tolerance_and_screening_severity(self):
+        tolerated = [{'outcome': 'Tolerated'}]
+        reaction = [{'outcome': 'Reaction'}]
+        primary = product_recommendation(tolerated, ['Menthol'])
+        secondary = product_recommendation(tolerated, ['Rosmarinus Officinalis Leaf Oil'])
+        no_flags = product_recommendation(tolerated, ['Water'])
+        self.assertEqual(primary['score'], 95)
+        self.assertEqual(secondary['score'], 97.5)
+        self.assertEqual(no_flags['score'], 100)
+        self.assertEqual(primary['basis'], 'Tolerated history')
+        self.assertEqual(product_recommendation([], ['Menthol'])['score'], 48)
+        self.assertEqual(product_recommendation([], ['로즈마리잎오일'])['score'], 54)
+        self.assertEqual(product_recommendation(reaction, ['Water'])['score'], 0)
+        self.assertEqual(product_recommendation(reaction, ['Menthol'])['score'], 0)
+        self.assertEqual(product_recommendation(reaction, ['Water'])['basis'], 'Reaction history')
+        self.assertEqual(product_recommendation(tolerated + reaction, ['Water'])['basis'], 'Mixed history')
+        many_flags = ['Menthol', 'Peppermint Oil', 'Cornmint Oil', 'Tea Tree Oil',
+                      '4-Terpineol', 'Sodium Lauryl Sulfate']
+        self.assertEqual(product_recommendation([], many_flags)['screening_score'], 0)
+        self.assertEqual(product_recommendation([], many_flags)['score'], 0)
+        # Even with many screening priorities, explicit tolerance outranks unassessed formulas.
+        self.assertGreater(product_recommendation(tolerated, many_flags)['score'],
+                           product_recommendation([], ['Water'])['score'])
+        # Repeated labels and long ingredient lists cannot dilute screening penalties.
+        self.assertEqual(primary['score'], product_recommendation(
+            tolerated, ['Menthol', 'MENTHOL'] + [f'other ingredient {i}' for i in range(30)])['score'])
+        self.assertEqual(product_recommendation([], ['Water'])['score'],
+                         product_recommendation([], ['Water', 'Glycerin', 'Ceramide NP'])['score'])
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -93,7 +127,11 @@ class TrackerTests(unittest.TestCase):
                 self.assertEqual(ingredient_flag(name), '')
         self.assertEqual(ingredient_flag_counts(
             ['Water', 'Aqua', 'Glycerin', 'GLYCERIN', 'Menthol']),
-            {'negative': 1, 'positive': 1, 'total': 3})
+            {'negative': 1, 'positive': 1, 'investigate': 0, 'total': 3})
+        self.assertEqual(ingredient_flag_counts([
+            'Menthol', 'MENTHOL', '로즈마리잎오일', '유칼립투스잎오일',
+            'Capsicum Fruit Extract', 'Glycerin', 'Water']),
+            {'negative': 1, 'positive': 1, 'investigate': 3, 'total': 6})
 
     def test_distinct_products_mixed_unknown_and_missing_comparator(self):
         a, b, c, d = [self.product(n) for n in ('A', 'B', 'C', 'D')]

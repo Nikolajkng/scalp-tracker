@@ -120,32 +120,64 @@ same URL again creates a new record after review; it does not merge histories.
 ## How the comparison works
 
 The Products table shows the brand, product/formula name, number of distinct
-reviewed ingredients, Reacted and Neutral ingredient counts, Reaction observations,
-Tolerated observations, Recommendation, and purchase location.
+reviewed ingredients, Reacted, Investigate and Neutral ingredient counts, Reaction
+observations, Tolerated observations, Recommendation, Recommendation basis, and
+purchase location.
 A count such as **2 / 23** means two tagged ingredients among 23 reviewed
 ingredients. These counts describe presence, not concentration or ingredient
 percentages in the shampoo.
 
-**Recommendation (0–100)** measures your recorded tolerance for each product/formula:
+**Recommendation (0–100)** combines ingredient screening and your recorded tolerance
+for each product/formula. Higher means a better match to those personal criteria.
 
-`100 × tolerated observations / (tolerated observations + reaction observations)`
+Ingredient screening starts at 100. Subtract **20 per distinct Reacted ingredient**
+and **10 per Investigate ingredient**, with a minimum of 0. These fixed penalties
+respect the image's two priority levels and retain your earlier sulfate selection.
+Neutral ingredients do not add points: their presence does not prove that you
+tolerate a shampoo. Repeated labels count once; adding unrelated ingredients cannot
+dilute the penalties.
 
-100 means at least one explicitly Tolerated observation and **zero Reaction
-observations**. 0 means all assessed observations were Reaction. Mixed histories
-score between these: 3 tolerated and 1 reaction gives 75; 1 tolerated and
-3 reactions gives 25. If rounding would show 100 for a history with reactions,
-the score is capped at 99.9. A dash means no assessed history, including untried
-products and histories containing only Unknown / not assessed entries.
+With assessed diary history:
+
+`tolerance percentage = 100 × Tolerated / (Tolerated + Reaction) observations`
+
+`recommendation = tolerance percentage × (0.75 + screening score / 400)`
+
+This gives direct diary history priority. Screening can lower the observed tolerance
+rate by up to 25%, so consistently tolerated shampoos score between 75 and 100,
+while products with only Reaction observations score 0. A score of 100 requires at
+least one Tolerated observation, zero Reaction observations and no screening tags.
+Histories with reactions cannot round up to 100 (maximum 99.9).
+
+Without assessed history:
+
+`recommendation = 0.6 × screening score`
+
+This provisional score is capped at 60 and labeled **Ingredients only**, including
+histories containing only Unknown / not assessed entries. An unassessed formula
+cannot outrank one with only explicit Tolerated observations.
+
+| Product history and ingredients | Recommendation | Basis |
+|---|---:|---|
+| Only tolerated, no screening tags | 100 | Tolerated history |
+| Only tolerated, one Reacted ingredient | 95 | Tolerated history |
+| Only tolerated, one Investigate ingredient | 97.5 | Tolerated history |
+| 3 tolerated, 1 reaction, no screening tags | 75 | Mixed history |
+| Only reactions | 0 | Reaction history |
+| Unassessed, no screening tags | 60 | Ingredients only |
+| Unassessed, one Reacted ingredient | 48 | Ingredients only |
 
 The adjacent observation counts show the supporting history; sort Reaction
 observations ascending to compare the fewest recorded reactions, or Recommendation
-descending to compare the highest recorded tolerance rates. Each assessed diary
+descending to compare the strongest recommendations. Each assessed diary
 entry counts once, across all dates and symptoms. Unknown entries are excluded;
-the explicit assessment is used even when symptom scores differ. Ingredient tags
-do not affect this score. Adding, editing or deleting observations recalculates it.
-Click the **i** button in Products for examples. This describes past observations,
-not a prediction or medical safety measurement. One tolerated observation provides
-less evidence than twenty, even when both histories score 100.
+the explicit assessment is used even when symptom scores differ. Editing ingredient
+lists or adding, editing or deleting observations recalculates the score.
+Click the **i** button in Products for the weights and examples. This is a transparent
+personal ranking heuristic, not a validated medical safety measurement or prediction.
+One tolerated observation provides less evidence than twenty, even when both
+histories score 100. Ingredient co-occurrence is not used to diagnose ingredient
+allergies or assign causation to unflagged ingredients.
 
 The user-selected **Reacted** tags match menthol, peppermint oil, cornmint oil,
 tea tree oil (including common botanical INCI oil names), **4-Terpineol**
@@ -173,8 +205,9 @@ labels are not translated automatically.
 Only the reviewed ingredient list is used; duplicates are counted once.
 Tags update automatically after product edits and are shown in the
 Ingredient Patterns **Your flag** column. Tags are personal preferences,
-not automatic diary assessments or health or safety ratings. Tags do not affect
-the diary-based Recommendation, diary grouping or Reaction Percentage.
+not automatic diary assessments or health or safety ratings. Reacted and Investigate
+tags affect ingredient screening in Recommendation; Neutral tags do not add points.
+Tags do not change diary grouping or Reaction Percentage.
 
 Click a **Reacted**, **Investigate** or **Neutral** cell in the **Your flag** column of
 Ingredient Patterns or Ingredient Categories to open a scrollable list of

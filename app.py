@@ -154,6 +154,7 @@ class App(ctk.CTk):
             'n', 'flakes', 'itch', 'bumps', 'reaction', 'tolerated',
             'both_outcomes', 'unknown', 'difference', 'bottles', 'negative', 'positive', 'recommendation',
             'reaction_entries', 'tolerated_entries',
+            'investigate',
         }
         tree.numeric_columns = numeric_columns.intersection(columns)
         for column, label, width in zip(columns, labels, widths):
@@ -310,9 +311,9 @@ class App(ctk.CTk):
             top, text='i', width=36, font=ctk.CTkFont(size=20, weight='bold'), corner_radius=18, command=self.show_recommendation_info)
         self.recommendation_info_button.pack(side='right')
         self.product_tree = self.table(self.product_tab,
-            ('brand', 'name', 'n', 'negative', 'positive', 'reaction_entries', 'tolerated_entries', 'recommendation', 'location'),
-            ('Brand', 'Product / formula', 'Ingredients', 'Reacted ingredients', 'Neutral ingredients', 'Reaction observations', 'Tolerated observations', 'Recommendation (0–100)', 'Bought at'),
-            (170, 350, 90, 160, 160, 180, 180, 190, 180))
+            ('brand', 'name', 'n', 'negative', 'investigate', 'positive', 'reaction_entries', 'tolerated_entries', 'recommendation', 'basis', 'location'),
+            ('Brand', 'Product / formula', 'Ingredients', 'Reacted ingredients', 'Investigate ingredients', 'Neutral ingredients', 'Reaction observations', 'Tolerated observations', 'Recommendation (0–100)', 'Recommendation basis', 'Bought at'),
+            (170, 350, 90, 160, 180, 160, 180, 180, 190, 190, 180))
         buttons = ctk.CTkFrame(self.product_tab, fg_color='transparent')
         buttons.pack(fill='x', pady=10)
         for text, command in [('Add product', lambda: self.product_dialog()),
@@ -323,25 +324,30 @@ class App(ctk.CTk):
         self.product_tree.bind('<Double-1>', lambda e: self.edit_product())
         self.product_empty = ctk.CTkLabel(self.product_tab, text='', text_color=('#597067', '#a6b8af'))
         self.product_empty.pack(anchor='w')
-        ctk.CTkLabel(self.product_tab, text='Reacted / neutral counts show your tagged ingredients / total reviewed ingredients. '
-                    'Recommendation uses your diary: 100 means only tolerated observations; — means no assessments.',
+        ctk.CTkLabel(self.product_tab, text='Ingredient counts show your tags / total reviewed ingredients. '
+                    'Recommendation combines screening priorities with your diary; Ingredients only means unassessed.',
                   wraplength=850).pack(anchor='w')
 
     def show_recommendation_info(self):
         messagebox.showinfo('About the recommendation indicator',
-            'This 0–100 indicator describes your recorded tolerance for this product/formula.\n\n'
-            'Score = 100 × tolerated observations / (tolerated + reaction observations).\n\n'
-            '100 means at least one Tolerated observation and zero Reaction observations. '
-            '0 means all assessed observations were Reaction. A dash means no assessed history: '
-            'an untried product is not treated as tolerated. Unknown / not assessed entries are excluded.\n\n'
-            'Examples: 3 tolerated and 0 reactions = 100; 3 tolerated and 1 reaction = 75; '
-            '0 tolerated and 2 reactions = 0. Scores with any reaction are capped at 99.9 '
-            'so rounding never shows 100 for a mixed history.\n\n'
-            'The two observation columns show the evidence behind the score. Each assessed diary '
-            'entry counts once; the score uses your explicit assessment, all symptoms and all dates. '
-            'It updates after adding, editing or deleting observations. Ingredient tags do not affect it. '
-            'This is not a percentage of safety or a prediction of future reactions; '
-            '100 from one observation has less supporting history than 100 from twenty.',
+            'This personal 0–100 recommendation combines your screening priorities and recorded tolerance.\n\n'
+            'Ingredient screening starts at 100: subtract 20 per distinct Reacted ingredient and '
+            '10 per Investigate ingredient, with a minimum of 0. Neutral tags do not add points '
+            'because ingredient presence does not establish personal tolerance.\n\n'
+            'With assessed history: score = tolerance percentage × (0.75 + screening score / 400). '
+            'Tolerance percentage = 100 × Tolerated / (Tolerated + Reaction) observations. '
+            'This gives diary evidence priority; screening can reduce the result by up to 25%.\n\n'
+            'Without assessed history: score = 0.6 × screening score (maximum 60), labeled Ingredients only. '
+            'Unknown / not assessed entries are excluded.\n\n'
+            'Examples: only tolerated, no screening tags = 100; only tolerated, one Reacted tag = 95; '
+            '3 tolerated and 1 reaction, no tags = 75; only reactions = 0; '
+            'unassessed with no tags = 60. A score of 100 requires tolerated history, zero reactions '
+            'and no screening tags. Histories with reactions cannot round up to 100.\n\n'
+            'Recommendation basis and observation counts show the supporting evidence. '
+            'All dates and symptoms are included, using your explicit diary assessments. '
+            'Scores update after formula or diary edits. These weights are a transparent ranking '
+            'heuristic, not a percentage of safety or a validated medical prediction. '
+            'One tolerated observation supports the score less than twenty.',
             parent=self)
 
     def selected(self, tree):
@@ -673,13 +679,14 @@ class App(ctk.CTk):
         for p in products:
             ingredients = self.store.ingredients(p['id'])
             counts = ingredient_flag_counts(ingredients)
-            recommendation = product_recommendation(histories[p['id']])
+            recommendation = product_recommendation(histories[p['id']], ingredients)
             score = recommendation['score']
             self.product_tree.insert('', 'end', iid=p['id'], values=(p['brand'], p['name'],
                 counts['total'], f"{counts['negative']} / {counts['total']}",
+                f"{counts['investigate']} / {counts['total']}",
                 f"{counts['positive']} / {counts['total']}",
                 recommendation['reaction'], recommendation['tolerated'],
-                f'{score:.1f}' if score is not None else '—', p['location']))
+                f'{score:.1f}', recommendation['basis'], p['location']))
         self.diary_tree.delete(*self.diary_tree.get_children())
         for e in self.store.entries():
             values = dict(e)
