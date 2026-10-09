@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core import Store, parse_ingredients
+from core import Store, parse_ingredients, ingredient_flag, ingredient_flag_counts
 
 
 class TrackerTests(unittest.TestCase):
@@ -30,6 +30,38 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(parse_ingredients('Ingredients: Aqua; Parfum\n1,2-Hexanediol, Extract (A, B), PEG-7; 정제수'),
                          ['1,2-hexanediol', 'extract (a, b)', 'fragrance', 'peg-7', 'water', '정제수'])
         self.assertEqual(parse_ingredients('Water, AQUA, Eau'), ['water'])
+
+    def test_user_ingredient_flags_match_labels_without_matching_other_chemicals(self):
+        negative = [
+            'MENTHOL', 'Peppermint Oil', 'Cornmint Oil', 'Tea Tree Oil',
+            'Mentha Piperita (Peppermint) Oil', 'Mentha Arvensis Leaf Oil',
+            'Melaleuca Alternifolia (Tea Tree) Leaf Oil',
+            'Sodium Lauryl Sulfate', 'Sodium Laureth Sulphate',
+            'Ammonium Lauryl Sulfate', 'Magnesium Sulfate',
+        ]
+        positive = [
+            'Glycerin', 'Glycerine', 'Colloidal Oatmeal', 'Oatmeal (Colloidal)',
+            'Ceramide NP', 'Ceramide AP', 'Ceramide EOP', 'Ceramide 3',
+            'Ceramides', 'Pyrithione Zinc', 'Zinc Pyrithione',
+        ]
+        neutral = [
+            'Water', 'Menthyl Lactate', 'Mentha Piperita Leaf Extract',
+            'Melaleuca Alternifolia Leaf Extract', 'Sodium C14-16 Olefin Sulfonate',
+            'Sodium Lauryl Sulfoacetate', 'Glyceryl Stearate', 'Glycereth-26',
+            'Avena Sativa Kernel Extract', 'Zinc Oxide', 'Sulfate-free',
+        ]
+        for name in negative:
+            with self.subTest(name=name):
+                self.assertEqual(ingredient_flag(name), 'Negative')
+        for name in positive:
+            with self.subTest(name=name):
+                self.assertEqual(ingredient_flag(name), 'Positive')
+        for name in neutral:
+            with self.subTest(name=name):
+                self.assertEqual(ingredient_flag(name), '')
+        self.assertEqual(ingredient_flag_counts(
+            ['Water', 'Aqua', 'Glycerin', 'GLYCERIN', 'Menthol']),
+            {'negative': 1, 'positive': 1, 'total': 3})
 
     def test_distinct_products_mixed_unknown_and_missing_comparator(self):
         a, b, c, d = [self.product(n) for n in ('A', 'B', 'C', 'D')]

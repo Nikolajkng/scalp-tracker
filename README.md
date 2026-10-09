@@ -79,6 +79,48 @@ repeat an exposure to populate the application.
 
 ## How the comparison works
 
+The Products table shows the brand, product/formula name, number of distinct
+reviewed ingredients, negative and positive ingredient counts, and purchase
+location. A count such as **2 / 23** means two tagged ingredients among 23 reviewed
+ingredients. These counts describe presence, not concentration or ingredient
+percentages in the shampoo.
+
+The user-selected **Negative** tags match menthol, peppermint oil, cornmint oil,
+tea tree oil (including common botanical INCI oil names), and ingredient names
+ending in sulfate/sulphate (singular or plural). This broad sulfate rule includes
+mineral sulfates such as magnesium sulfate, not only sulfate surfactants.
+Sulfonates and sulfoacetates are not matched by that rule.
+The **Positive** tags match glycerin/glycerine/glycerol, colloidal oatmeal,
+ceramide labels (such as Ceramide NP, AP, EOP or 3), and zinc pyrithione/pyrithione
+zinc. Ordinary oat extracts are not assumed to be colloidal oatmeal.
+Matching ignores case and recognizes parenthesized common names in botanical
+labels. It does not translate Korean or other ingredient names automatically.
+Only the reviewed ingredient list is used; duplicates are counted once.
+Tags update automatically after product edits and are shown in the
+Ingredient Patterns **Your flag** column. Tags are personal preferences,
+not health or safety ratings, and do not alter observation grouping or scores.
+
+| Ingredient Patterns column | Measurement |
+|---|---|
+| Ingredient | Normalized reviewed ingredient name |
+| Your flag | Negative, Positive, or a dash for no matching personal tag |
+| Bottles / formulas | Total saved product records containing this ingredient; one per record, including unassessed products |
+| Reaction | Products containing the ingredient in the reaction group / all products in that group |
+| Tolerated | Products containing the ingredient in the tolerated group / all products in that group |
+| Mixed | Products containing the ingredient with both reaction and tolerated observations |
+| Unassessed / other | Products containing the ingredient without qualifying assessed observations, including reactions only to another selected symptom |
+| Difference (pp) | Reaction percentage minus tolerated percentage, in percentage points |
+
+Physical bottle IDs are not recorded: buying another bottle of the same saved
+formula or adding another diary entry does not increase Bottles / formulas.
+The diary table shows observation date, product, your explicit assessment,
+flakes and itch severity (each 0 = none to 5 = severe), the number of bumps,
+and container context (Unknown, Original bottle, or Decanted bottle). Use dates
+and notes are available when editing an observation.
+
+The summary cards count saved product records, diary observations, and distinct
+normalized ingredients across all products.
+
 You explicitly select **Reaction**, **Tolerated**, or **Unknown / not assessed**.
 Symptom scores do not decide the assessment automatically: symptoms may have
 been present before using the product. Zero symptoms are never silently treated

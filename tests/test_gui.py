@@ -61,6 +61,20 @@ class GuiTests(unittest.TestCase):
                                         body_font.measure(app.product_tree.set(str(pid), 'name')) + 28)
                 self.assertLess(app.product_tree.xview()[1], 1)
                 self.assertEqual(app.compare_tree.set('0', 'bottles'), '1')
+                self.assertEqual(app.product_tree.set(str(pid), 'negative'), '0 / 2')
+                self.assertEqual(app.product_tree.set(str(pid), 'positive'), '1 / 2')
+                flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
+                         for row in app.compare_tree.get_children()}
+                self.assertEqual(flags, {'water': '—', 'glycerin': 'Positive'})
+                # Counts and individual flags update after formula edits.
+                store.save_product('Short', 'Test', 'Menthol, Water, Glycerin',
+                                   ['menthol', 'water', 'glycerin'], product_id=pid)
+                app.refresh()
+                self.assertEqual(app.product_tree.set(str(pid), 'negative'), '1 / 3')
+                self.assertEqual(app.product_tree.set(str(pid), 'positive'), '1 / 3')
+                flags = {app.compare_tree.set(row, 'ingredient'): app.compare_tree.set(row, 'flag')
+                         for row in app.compare_tree.get_children()}
+                self.assertEqual(flags['menthol'], 'Negative')
                 # Short contents should fill the viewport, including after resize.
                 store.save_product('Short', 'Test', 'Water, Glycerin',
                                    ['water', 'glycerin'], product_id=pid)

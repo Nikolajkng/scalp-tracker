@@ -11,7 +11,7 @@ from datetime import date, datetime
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 
-from core import Store, parse_ingredients, OUTCOMES, CONTAINERS
+from core import Store, parse_ingredients, ingredient_flag, ingredient_flag_counts, OUTCOMES, CONTAINERS
 
 
 def text_value(widget):
@@ -127,7 +127,7 @@ class App(ctk.CTk):
         tree = ttk.Treeview(frame, columns=columns, show='headings', selectmode='browse', height=7)
         numeric_columns = {
             'n', 'flakes', 'itch', 'bumps', 'reaction', 'tolerated',
-            'mixed', 'unknown', 'difference', 'bottles',
+            'mixed', 'unknown', 'difference', 'bottles', 'negative', 'positive',
         }
         for column, label, width in zip(columns, labels, widths):
             anchor = 'center' if column in numeric_columns else 'w'
@@ -196,8 +196,10 @@ class App(ctk.CTk):
     def build_products(self):
         ctk.CTkLabel(self.product_tab, text='Add the exact formula from your label. Use a new product entry if the formula changes.',
                   wraplength=850).pack(anchor='w', pady=(0, 10))
-        self.product_tree = self.table(self.product_tab, ('brand', 'name', 'n', 'location'),
-                                       ('Brand', 'Product / formula', 'Ingredients', 'Bought at'), (170, 350, 90, 180))
+        self.product_tree = self.table(self.product_tab,
+            ('brand', 'name', 'n', 'negative', 'positive', 'location'),
+            ('Brand', 'Product / formula', 'Ingredients', 'Negative ingredients', 'Positive ingredients', 'Bought at'),
+            (170, 350, 90, 160, 160, 180))
         buttons = ctk.CTkFrame(self.product_tab, fg_color='transparent')
         buttons.pack(fill='x', pady=10)
         for text, command in [('Add product', lambda: self.product_dialog()),
@@ -207,7 +209,8 @@ class App(ctk.CTk):
         self.product_tree.bind('<Double-1>', lambda e: self.edit_product())
         self.product_empty = ctk.CTkLabel(self.product_tab, text='', text_color=('#597067', '#a6b8af'))
         self.product_empty.pack(anchor='w')
-        ctk.CTkLabel(self.product_tab, text='Start with past experiences. Empty lists contain no invented product formulas or sample health data.',
+        ctk.CTkLabel(self.product_tab, text='Negative / positive counts show your tagged ingredients / total reviewed ingredients. '
+                    'These are your chosen tags, not safety ratings.',
                   wraplength=850).pack(anchor='w')
 
     def selected(self, tree):
@@ -363,9 +366,9 @@ class App(ctk.CTk):
         self.summary = tk.StringVar()
         ctk.CTkLabel(self.compare_tab, textvariable=self.summary, wraplength=900).pack(anchor='w', pady=10)
         self.compare_tree = self.table(self.compare_tab,
-            ('ingredient', 'bottles', 'reaction', 'tolerated', 'mixed', 'unknown', 'difference'),
-            ('Ingredient', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Mixed', 'Unassessed / other', 'Difference (pp)'),
-            (270, 140, 95, 95, 70, 150, 120))
+            ('ingredient', 'flag', 'bottles', 'reaction', 'tolerated', 'mixed', 'unknown', 'difference'),
+            ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Mixed', 'Unassessed / other', 'Difference (pp)'),
+            (270, 100, 140, 95, 95, 70, 150, 120))
         self.compare_tree.bind('<<TreeviewSelect>>', self.ingredient_detail)
         self.detail = tk.StringVar(value='Select an ingredient to see which products contain it.')
         ctk.CTkLabel(self.compare_tab, textvariable=self.detail, wraplength=900).pack(anchor='w', pady=10)
@@ -389,7 +392,7 @@ class App(ctk.CTk):
                 points = 100 * row['difference']
                 marker = ' 🚩' if points >= 20 else ' ✅' if points <= -20 else ''
                 difference = f"{points:+.1f}{marker}"
-            self.compare_tree.insert('', 'end', iid=key, values=(row['name'], row['bottles'],
+            self.compare_tree.insert('', 'end', iid=key, values=(row['name'], ingredient_flag(row['name']) or '—', row['bottles'],
                 f"{row['reaction']} / {totals['reaction']}", f"{row['tolerated']} / {totals['tolerated']}",
                 row['mixed'], row['unknown'], difference))
         suffix = ('Add explicitly tolerated and reaction observations to compare.'
@@ -424,8 +427,10 @@ class App(ctk.CTk):
         self.diary_empty.configure(text='' if entries else 'No observations yet. Add a product, then record your first observation.')
         self.product_tree.delete(*self.product_tree.get_children())
         for p in self.store.products():
+            counts = ingredient_flag_counts(self.store.ingredients(p['id']))
             self.product_tree.insert('', 'end', iid=p['id'], values=(p['brand'], p['name'],
-                                     len(self.store.ingredients(p['id'])), p['location']))
+                counts['total'], f"{counts['negative']} / {counts['total']}",
+                f"{counts['positive']} / {counts['total']}", p['location']))
         self.diary_tree.delete(*self.diary_tree.get_children())
         for e in self.store.entries():
             self.diary_tree.insert('', 'end', iid=e['id'], values=tuple(e[k] for k in

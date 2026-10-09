@@ -15,6 +15,40 @@ ALIASES = {
 OUTCOMES = ('Unknown / not assessed', 'Tolerated', 'Reaction')
 CONTAINERS = ('Unknown', 'Original bottle', 'Decanted bottle')
 
+# User-selected label tags, independent of diary outcomes and comparisons.
+NEGATIVE_INGREDIENTS = {
+    'menthol', 'peppermint oil', 'cornmint oil', 'tea tree oil',
+    'mentha piperita oil', 'mentha piperita leaf oil',
+    'mentha arvensis oil', 'mentha arvensis leaf oil',
+    'mentha canadensis oil', 'mentha canadensis leaf oil',
+    'melaleuca alternifolia oil', 'melaleuca alternifolia leaf oil',
+}
+POSITIVE_INGREDIENTS = {
+    'glycerin', 'glycerine', 'glycerol', 'colloidal oatmeal',
+    'oatmeal (colloidal)', 'pyrithione zinc', 'zinc pyrithione',
+}
+
+
+def ingredient_flag(name):
+    """Match explicit English/INCI labels; never infer health effects."""
+    name = ' '.join(unicodedata.normalize('NFKC', name).casefold().split())
+    # Parenthesized common names often accompany botanical INCI names.
+    base = ' '.join(re.sub(r'\([^)]*\)', '', name).split())
+    if (name in NEGATIVE_INGREDIENTS or base in NEGATIVE_INGREDIENTS
+            or re.search(r'\b(?:sulfates?|sulphates?)$', base)):
+        return 'Negative'
+    if (name in POSITIVE_INGREDIENTS or base in POSITIVE_INGREDIENTS
+            or re.fullmatch(r'ceramides?(?: [a-z0-9]+(?:-[a-z0-9]+)*)?', base)):
+        return 'Positive'
+    return ''
+
+
+def ingredient_flag_counts(names):
+    """Count each reviewed, normalized ingredient once."""
+    flags = [ingredient_flag(name) for name in normalize_lines(names)]
+    return {'negative': flags.count('Negative'), 'positive': flags.count('Positive'),
+            'total': len(flags)}
+
 
 def parse_ingredients(raw):
     """Split only outside parentheses; keep original text in the product record.
