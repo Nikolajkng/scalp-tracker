@@ -28,6 +28,73 @@ POSITIVE_INGREDIENTS = {
     'oatmeal (colloidal)', 'pyrithione zinc', 'zinc pyrithione',
 }
 
+CATEGORY_DESCRIPTIONS = {
+    'Oils': 'Plant oils and other explicitly named oils; useful for comparing formula composition.',
+    'Fragrance': 'Perfume labels, common fragrance components and aromatic oils.',
+    'Anti-fungals': 'Recognized antifungal actives. Presence alone does not establish dose or effectiveness.',
+    'Cleansers': 'Common surfactants that help remove oil and dirt.',
+    'Moisture support': 'Common humectants that help retain moisture.',
+    'Barrier support': 'Ceramides and common barrier lipids.',
+    'Soothing ingredients': 'Common soothing ingredients such as colloidal oatmeal and allantoin.',
+    'Preservatives': 'Common preservatives used to protect the formula.',
+    'pH adjusters': 'Ingredients commonly used to adjust or buffer formula pH.',
+    'Texture / conditioning': 'Common thickeners, conditioning agents and silicones.',
+    'Solvents': 'Common carriers and solvents such as water and alcohol.',
+    'Other / unclassified': 'No rule matched. This is not a safety or effectiveness judgment.',
+}
+CATEGORY_LABELS = {
+    'Fragrance': {'fragrance', 'limonene', 'linalool', 'citral', 'geraniol',
+                  'citronellol', 'eugenol', 'coumarin', 'hexyl cinnamal',
+                  'benzyl salicylate', 'menthol'},
+    'Anti-fungals': {'zinc pyrithione', 'pyrithione zinc', 'piroctone olamine',
+                    'climbazole', 'ketoconazole', 'selenium sulfide',
+                    'selenium disulfide', 'ciclopirox', 'ciclopirox olamine'},
+    'Cleansers': {'sodium lauryl sulfate', 'sodium laureth sulfate',
+                 'ammonium lauryl sulfate', 'ammonium laureth sulfate',
+                 'sodium coco-sulfate', 'sodium c14-16 olefin sulfonate',
+                 'sodium lauryl sulfoacetate', 'cocamidopropyl betaine',
+                 'coco-betaine', 'decyl glucoside', 'coco-glucoside',
+                 'lauryl glucoside', 'sodium cocoyl isethionate',
+                 'sodium cocoyl glutamate', 'disodium cocoyl glutamate',
+                 'sodium lauroyl sarcosinate', 'disodium laureth sulfosuccinate'},
+    'Moisture support': {'glycerin', 'glycerine', 'glycerol', 'panthenol',
+                        'propylene glycol', 'butylene glycol', 'betaine',
+                        'sodium pca', 'sodium hyaluronate', 'hyaluronic acid',
+                        'urea', 'sorbitol'},
+    'Barrier support': {'cholesterol', 'phytosphingosine', 'sphingosine'},
+    'Soothing ingredients': {'colloidal oatmeal', 'oatmeal (colloidal)', 'allantoin',
+                            'bisabolol', 'panthenol'},
+    'Preservatives': {'phenoxyethanol', 'sodium benzoate', 'potassium sorbate',
+                     'methylisothiazolinone', 'methylchloroisothiazolinone',
+                     'benzyl alcohol', 'methylparaben', 'propylparaben',
+                     'ethylparaben', 'dmdm hydantoin', 'chlorphenesin'},
+    'pH adjusters': {'citric acid', 'sodium citrate', 'lactic acid',
+                     'sodium hydroxide', 'potassium hydroxide'},
+    'Texture / conditioning': {'sodium chloride', 'xanthan gum', 'carbomer',
+                              'hydroxyethylcellulose', 'guar hydroxypropyltrimonium chloride',
+                              'dimethicone', 'amodimethicone', 'cetyl alcohol',
+                              'cetearyl alcohol', 'stearyl alcohol'},
+    'Solvents': {'water', 'alcohol', 'alcohol denat.', 'ethanol', 'isopropyl alcohol'},
+}
+
+
+def ingredient_categories(name):
+    """Conservative label-based grouping; an ingredient can have several roles."""
+    name = normalize_lines([name])[0] if name.strip() else ''
+    base = ' '.join(re.sub(r'\([^)]*\)', '', name).split())
+    categories = {category for category, labels in CATEGORY_LABELS.items()
+                  if name in labels or base in labels
+                  or base.replace('sulphate', 'sulfate') in labels}
+    if re.search(r'\boil$', base):
+        categories.add('Oils')
+    if base in NEGATIVE_INGREDIENTS and base != 'menthol':
+        categories.add('Fragrance')
+    if re.fullmatch(r'ceramides?(?: [a-z0-9]+(?:-[a-z0-9]+)*)?', base):
+        categories.add('Barrier support')
+    if re.fullmatch(r'polyquaternium-\d+', base):
+        categories.add('Texture / conditioning')
+    return tuple(category for category in CATEGORY_DESCRIPTIONS if category in categories) or ('Other / unclassified',)
+
 
 def ingredient_flag(name):
     """Match explicit English/INCI labels; never infer health effects."""

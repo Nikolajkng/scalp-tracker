@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core import Store, parse_ingredients, ingredient_flag, ingredient_flag_counts
+from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
+                  ingredient_categories)
 
 
 class TrackerTests(unittest.TestCase):
@@ -80,6 +81,30 @@ class TrackerTests(unittest.TestCase):
         self.store.delete('product', b)
         self.assertTrue(all(r['difference'] is None for r in self.store.comparisons()[1]))
         self.assertTrue(all(r['bottles'] == 3 for r in self.store.comparisons()[1]))
+
+    def test_categories_support_multiple_roles_and_leave_unknown_labels_unclassified(self):
+        samples = {
+            'Mentha Piperita (Peppermint) Oil': ('Oils', 'Fragrance'),
+            'ZINC PYRITHIONE': ('Anti-fungals',),
+            'Piroctone Olamine': ('Anti-fungals',),
+            'Glycerin': ('Moisture support',),
+            'Panthenol': ('Moisture support', 'Soothing ingredients'),
+            'Ceramide NP': ('Barrier support',),
+            'Colloidal Oatmeal': ('Soothing ingredients',),
+            'Sodium Laureth Sulphate': ('Cleansers',),
+            'Magnesium Sulfate': ('Other / unclassified',),
+            'Parfum': ('Fragrance',),
+            'Cocos Nucifera (Coconut) Oil': ('Oils',),
+            'Phenoxyethanol': ('Preservatives',),
+            'Citric Acid': ('pH adjusters',),
+            'Polyquaternium-10': ('Texture / conditioning',),
+            'Aqua': ('Solvents',),
+            '정제수': ('Other / unclassified',),
+            'Unknown chemical': ('Other / unclassified',),
+        }
+        for name, categories in samples.items():
+            with self.subTest(name=name):
+                self.assertEqual(ingredient_categories(name), categories)
 
     def test_symptom_filter_and_unknown_not_assumed_tolerated(self):
         a, b = self.product('A'), self.product('B')

@@ -1,5 +1,6 @@
 """Run with: python app.py. Offline CustomTkinter desktop interface."""
 import argparse
+import re
 import sqlite3
 import tkinter as tk
 import tkinter.font as tkfont
@@ -11,7 +12,8 @@ from datetime import date, datetime
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 
-from core import Store, parse_ingredients, ingredient_flag, ingredient_flag_counts, OUTCOMES, CONTAINERS
+from core import (Store, parse_ingredients, ingredient_flag, ingredient_flag_counts,
+                  ingredient_categories, CATEGORY_DESCRIPTIONS, OUTCOMES, CONTAINERS)
 
 
 def text_value(widget):
@@ -25,6 +27,7 @@ class App(ctk.CTk):
         super().__init__()
         self.store = store
         self.tables = []
+        self.table_sorts = {}
         self.title('Scalp Tracker')
         self.geometry('1180x840')
         self.minsize(980, 720)
@@ -47,10 +50,10 @@ class App(ctk.CTk):
 
         self.stat_vars = [tk.StringVar(value='0') for _ in range(3)]
         # Own the navigation layout instead of rearranging CTkTabview internals.
-        tab_names = ('Products', 'Reaction Diary', 'Ingredients Patterns')
+        tab_names = ('Products', 'Reaction Diary', 'Ingredients Patterns', 'Ingredient Categories')
         navigation = ctk.CTkSegmentedButton(
             self, values=list(tab_names), height=76,
-            font=ctk.CTkFont(size=21, weight='bold'), corner_radius=12,
+            font=ctk.CTkFont(size=17, weight='bold'), corner_radius=12,
             selected_color='#2563eb', selected_hover_color='#1d4ed8',
             command=self.show_tab)
         navigation.pack(fill='x', padx=28, pady=(8, 8))
@@ -62,7 +65,7 @@ class App(ctk.CTk):
             page = ctk.CTkFrame(book, fg_color='transparent')
             page.grid(row=0, column=0, sticky='nsew', padx=12, pady=12)
             self.pages[name] = page
-        self.product_tab, self.diary_tab, self.compare_tab = self.pages.values()
+        self.product_tab, self.diary_tab, self.compare_tab, self.category_tab = self.pages.values()
         navigation.set(tab_names[0])
         self.show_tab(tab_names[0])
 
@@ -77,6 +80,7 @@ class App(ctk.CTk):
         self.build_products()
         self.build_diary()
         self.build_comparison()
+        self.build_categories()
         footer = ctk.CTkFrame(self, fg_color='transparent')
         footer.pack(side='bottom', fill='x', padx=28, pady=(4, 20))
         self.footer = footer
@@ -129,9 +133,11 @@ class App(ctk.CTk):
             'n', 'flakes', 'itch', 'bumps', 'reaction', 'tolerated',
             'mixed', 'unknown', 'difference', 'bottles', 'negative', 'positive',
         }
+        tree.numeric_columns = numeric_columns.intersection(columns)
         for column, label, width in zip(columns, labels, widths):
             anchor = 'center' if column in numeric_columns else 'w'
-            tree.heading(column, text=label, anchor=anchor)
+            tree.heading(column, text=label, anchor=anchor,
+                         command=lambda c=column: self.sort_table(tree, c))
             tree.column(column, width=width, minwidth=60, anchor=anchor, stretch=False)
         bar = ctk.CTkScrollbar(frame, orientation='vertical', command=tree.yview)
         tree.configure(yscrollcommand=bar.set)
@@ -161,6 +167,42 @@ class App(ctk.CTk):
         self.tables.append(tree)
         return tree
 
+    def sort_table(self, tree, column, descending=None):
+        if descending is None:
+            previous_column, previous_descending = self.table_sorts.get(tree, (None, False))
+            descending = not previous_descending if previous_column == column else False
+        self.table_sorts[tree] = (column, descending)
+        values, missing = [], []
+        for item in tree.get_children():
+            text = tree.set(item, column)
+            if column in tree.numeric_columns:
+                # Count fractions sort by their numerator; markers are ignored.
+                match = re.match(r'^[+-]?\d+(?:\.\d+)?', text.strip())
+                if match is None:
+                    missing.append(item)
+                    continue
+                value = float(match.group())
+            else:
+                value = text.casefold()
+            values.append((value, item))
+        items = [item for _, item in sorted(values, key=lambda pair: pair[0], reverse=descending)]
+        for index, item in enumerate(items + missing):
+            tree.move(item, '', index)
+        for table, _, columns, labels, _ in self.table_specs:
+            if table is tree:
+                for name, label in zip(columns, labels):
+                    tree.heading(name, text=label + (' ▼' if descending else ' ▲') if name == column else label)
+                break
+        self.stripe_rows(tree)
+        self.resize_table_columns(tree)
+
+    def restore_table_sort(self, tree):
+        if tree in self.table_sorts:
+            self.sort_table(tree, *self.table_sorts[tree])
+        else:
+            self.stripe_rows(tree)
+            self.resize_table_columns(tree)
+
     def position_separators(self, tree, columns, lines):
         total = sum(tree.column(column, 'width') for column in columns)
         offset = -round(tree.xview()[0] * total)
@@ -179,7 +221,7 @@ class App(ctk.CTk):
             heading_font = tkfont.Font(family='sans-serif', size=10, weight='bold')
             widths = []
             for column, label in zip(columns, labels):
-                widest = heading_font.measure(label)
+                widest = heading_font.measure(tree.heading(column, 'text'))
                 for item in tree.get_children():
                     widest = max(widest, body_font.measure(str(tree.set(item, column))))
                 widths.append(max(60, widest + 28))
@@ -363,21 +405,65 @@ class App(ctk.CTk):
         choice = ctk.CTkOptionMenu(top, variable=self.symptom, values=['Any reaction', 'Flakes', 'Itch', 'Bumps'],
                                    command=lambda value: self.refresh_comparison())
         choice.pack(side='left', padx=10)
+        self.comparison_info_button = ctk.CTkButton(
+            top, text='ⓘ', width=36, command=self.show_comparison_info)
+        self.comparison_info_button.pack(side='right')
         self.summary = tk.StringVar()
         ctk.CTkLabel(self.compare_tab, textvariable=self.summary, wraplength=900).pack(anchor='w', pady=10)
         self.compare_tree = self.table(self.compare_tab,
-            ('ingredient', 'flag', 'bottles', 'reaction', 'tolerated', 'mixed', 'unknown', 'difference'),
-            ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Mixed', 'Unassessed / other', 'Difference (pp)'),
-            (270, 100, 140, 95, 95, 70, 150, 120))
+            ('ingredient', 'flag', 'bottles', 'reaction', 'tolerated', 'unknown', 'difference'),
+            ('Ingredient', 'Your flag', 'Bottles / formulas', 'Reaction', 'Tolerated', 'Not assessed', 'Reaction Percentage'),
+            (270, 100, 140, 95, 95, 130, 170))
         self.compare_tree.bind('<<TreeviewSelect>>', self.ingredient_detail)
         self.detail = tk.StringVar(value='Select an ingredient to see which products contain it.')
         ctk.CTkLabel(self.compare_tab, textvariable=self.detail, wraplength=900).pack(anchor='w', pady=10)
-        ctk.CTkLabel(self.compare_tab, text='Difference = % of reaction products containing the ingredient minus % of tolerated products containing it. '
-                  'Bottles / formulas counts all saved product records containing the ingredient, including unassessed products. '
-                  'Mixed products are excluded from both percentages. Counts are distinct products, not washes. '
-                  'These are descriptive patterns with limited evidence, not probabilities or proof of a trigger. '
-                  'Ingredients used together, concentration, storage and other changes can explain patterns.',
-                  wraplength=900).pack(anchor='w', pady=8)
+
+    def show_comparison_info(self):
+        messagebox.showinfo('About Reaction Percentage',
+            'Reaction Percentage keeps the original comparison: the percentage of reaction-group '
+            'products containing an ingredient minus the percentage of tolerated-group products containing it.\n\n'
+            'Example: 2 / 4 reaction products and 1 / 4 tolerated products = 50% − 25% = +25 percentage points. '
+            'It is not the probability of a reaction. A dash means a comparison group is missing. '
+            '🚩 marks +20 points or higher; ✅ marks −20 points or lower.\n\n'
+            'Bottles / formulas counts distinct saved products, not physical bottles or washes. '
+            'Products with both reaction and tolerated observations remain excluded from the percentages. '
+            'Not assessed includes products with no qualifying assessment for the selected symptom, '
+            'including reactions only to another symptom.\n\n'
+            'Your positive and negative flags are separate personal tags. These patterns do not '
+            'account for concentration or other exposures and do not establish causation or safety.',
+            parent=self)
+
+    def build_categories(self):
+        top = ctk.CTkFrame(self.category_tab, fg_color='transparent')
+        top.pack(fill='x')
+        ctk.CTkLabel(top, text='Ingredient category:').pack(side='left')
+        self.category = tk.StringVar(value='All categories')
+        self.category_menu = ctk.CTkOptionMenu(
+            top, variable=self.category, values=['All categories', *CATEGORY_DESCRIPTIONS],
+            width=240, command=lambda value: self.refresh_categories())
+        self.category_menu.pack(side='left', padx=10)
+        self.category_description = tk.StringVar()
+        ctk.CTkLabel(self.category_tab, textvariable=self.category_description,
+                    wraplength=900, justify='left').pack(anchor='w', pady=10)
+        self.category_tree = self.table(self.category_tab,
+            ('ingredient', 'category', 'flag', 'bottles'),
+            ('Ingredient', 'Categories', 'Your flag', 'Bottles / formulas'),
+            (300, 350, 100, 140))
+
+    def refresh_categories(self):
+        selected = self.category.get()
+        self.category_description.set(CATEGORY_DESCRIPTIONS.get(selected,
+            'Group ingredients by common roles. One ingredient can appear in several categories; '
+            'unrecognized labels remain unclassified. Categories are not safety ratings.'))
+        self.category_tree.delete(*self.category_tree.get_children())
+        _, rows = self.store.comparisons()
+        for row in rows:
+            categories = ingredient_categories(row['name'])
+            if selected != 'All categories' and selected not in categories:
+                continue
+            self.category_tree.insert('', 'end', values=(
+                row['name'], ', '.join(categories), ingredient_flag(row['name']) or '—', row['bottles']))
+        self.restore_table_sort(self.category_tree)
 
     def refresh_comparison(self):
         totals, rows = self.store.comparisons(self.symptom.get())
@@ -394,13 +480,12 @@ class App(ctk.CTk):
                 difference = f"{points:+.1f}{marker}"
             self.compare_tree.insert('', 'end', iid=key, values=(row['name'], ingredient_flag(row['name']) or '—', row['bottles'],
                 f"{row['reaction']} / {totals['reaction']}", f"{row['tolerated']} / {totals['tolerated']}",
-                row['mixed'], row['unknown'], difference))
+                row['unknown'], difference))
         suffix = ('Add explicitly tolerated and reaction observations to compare.'
                   if not totals['reaction'] or not totals['tolerated'] else 'Exploratory evidence only; no confidence or causal score.')
         self.summary.set(f"Products: {totals['reaction']} reaction · {totals['tolerated']} tolerated · "
-                         f"{totals['mixed']} mixed · {totals['unknown']} unassessed / other. {suffix}")
-        self.stripe_rows(self.compare_tree)
-        self.resize_table_columns(self.compare_tree)
+                         f"{totals['mixed']} mixed (excluded) · {totals['unknown']} not assessed. {suffix}")
+        self.restore_table_sort(self.compare_tree)
         self.detail.set('Select an ingredient to see which products contain it.')
 
     def ingredient_detail(self, event=None):
@@ -436,9 +521,9 @@ class App(ctk.CTk):
             self.diary_tree.insert('', 'end', iid=e['id'], values=tuple(e[k] for k in
                 ('observed_on', 'product', 'outcome', 'flakes', 'itch', 'bumps', 'container')))
         self.refresh_comparison()
+        self.refresh_categories()
         for tree in self.tables:
-            self.stripe_rows(tree)
-            self.resize_table_columns(tree)
+            self.restore_table_sort(tree)
 
     def stripe_rows(self, tree):
         for index, item in enumerate(tree.get_children()):

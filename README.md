@@ -107,9 +107,37 @@ not health or safety ratings, and do not alter observation grouping or scores.
 | Bottles / formulas | Total saved product records containing this ingredient; one per record, including unassessed products |
 | Reaction | Products containing the ingredient in the reaction group / all products in that group |
 | Tolerated | Products containing the ingredient in the tolerated group / all products in that group |
-| Mixed | Products containing the ingredient with both reaction and tolerated observations |
-| Unassessed / other | Products containing the ingredient without qualifying assessed observations, including reactions only to another selected symptom |
-| Difference (pp) | Reaction percentage minus tolerated percentage, in percentage points |
+| Not assessed | Products containing the ingredient without qualifying assessed observations, including reactions only to another selected symptom |
+| Reaction Percentage | Reaction-group percentage minus tolerated-group percentage, in percentage points |
+
+**Reaction Percentage** is a renamed comparison column; the calculation is
+unchanged. It is not the likelihood that an ingredient causes a reaction.
+Click the **ⓘ** button beside the symptom selector to see the calculation,
+an example, marker thresholds and group definitions. Mixed products are no
+longer displayed in a separate table column, but remain excluded from both
+comparison percentages and appear in the summary.
+
+Click any table header once for ascending order and again for descending order.
+Text sorts alphabetically without case sensitivity; ISO dates sort
+chronologically. Numeric columns sort by numeric value, ignoring emoji markers.
+Count fractions such as **2 / 23** sort by the numerator (the ingredient or
+product count). Missing comparison values remain last in either direction.
+An arrow in the active header shows the direction. Sorting is retained when
+data refreshes during the session.
+
+The **Ingredient Categories** tab groups reviewed ingredients into Oils,
+Fragrance, Anti-fungals, Cleansers, Moisture support, Barrier support, Soothing
+ingredients, Preservatives, pH adjusters, Texture / conditioning, Solvents,
+and Other / unclassified. Select a category to filter its ingredients and see
+a short description of their common role. The table also shows personal flags
+and how many product records contain each ingredient.
+
+Categories use a conservative list of common English/INCI names, with rules
+for named oils, ceramides and polyquaterniums. An ingredient can have multiple
+roles (for example, panthenol appears in moisture support and soothing).
+Unknown labels are left unclassified rather than assigned an inferred role.
+The categories are composition aids, not safety ratings or recommendations;
+an antifungal label alone does not establish concentration or effectiveness.
 
 Physical bottle IDs are not recorded: buying another bottle of the same saved
 formula or adding another diary entry does not increase Bottles / formulas.
